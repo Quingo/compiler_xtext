@@ -1,0 +1,14 @@
+operation main(): int[]
+{
+	int a = 2;
+	a += 3;
+	int b = 3;
+	b -= a;
+	int c = 1;
+	c *= b;
+	int d = 4;
+	d /= c;
+	int e = 6;
+	e %= d;
+	return {a, b, c, d, e};
+}

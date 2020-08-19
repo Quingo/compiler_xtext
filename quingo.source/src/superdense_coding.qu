@@ -1,0 +1,42 @@
+package qingo
+import config.jason.*
+import operations.*
+
+operation dummy(): unit
+{
+	using(q: qubit) {
+		X180(q);
+	}
+}
+
+operation mea(q: qubit): bool
+{
+	H(q);
+	return measure(q);
+}
+
+operation superdense(x0: int, x1: int): (bool, bool)
+{
+	bool y0;
+	bool y1;
+	using ((q0, q1) : (qubit, qubit)) {
+		init(q0);  // 200 us
+		init(q1);
+		 
+		H(q0);
+		CNOT(q0, q1);
+		if (x1 == 1) {H(q0);}
+		if (x0 == 0) {H(q1);}
+		CNOT(q0, q1);
+		H(q0);
+		y0 = measure(q0);
+		y1 = measure(q1); 
+		y1 = !y0;
+		y1 = mea(q1);
+	}
+	return (y0, y1);
+}
+
+operation main(): (bool, bool) {
+	return superdense(0, 1);
+}

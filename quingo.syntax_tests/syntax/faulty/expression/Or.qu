@@ -1,0 +1,36 @@
+/*
+ * function: test type of expression or
+ * structure: Expression || Expression
+ * type: faulty type
+ * testpoint: wrong expression if left or right side of Or
+ */
+
+
+operation syntax_or_test(): bool{
+	bool result;
+	
+	int a;
+	bool b;
+	int c;	
+	bool[] d;
+	double e;
+	(int,bool) f;
+	
+	result = a || b;
+	
+	result = d || b;
+	
+	result = e || b;
+	
+	result = f || b;
+	
+	using (q:qubit) {
+		result = q || b;
+	}
+	
+
+	
+	
+	return result;
+	
+}

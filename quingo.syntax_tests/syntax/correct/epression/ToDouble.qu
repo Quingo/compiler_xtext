@@ -1,0 +1,16 @@
+/*
+ * function: test type of expression toDouble
+ * structure: toDouble "(" value=Expression ")"
+ * type: correct type
+ * testpoint: type is double and value type can be int, double
+ */
+ 
+ operation syntax_todouble_test(): unit{
+	double result;
+
+	int a;
+	double b;
+	
+	result = toDouble(a);
+	result = toDouble(b);
+}

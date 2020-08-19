@@ -1,0 +1,9 @@
+operation main(): unit
+{
+	wait(2, 3);
+	using(q: qubit) {
+		wait();
+		wait(q);
+		wait(q, true);
+	}
+}

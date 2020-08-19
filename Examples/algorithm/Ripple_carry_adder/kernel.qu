@@ -1,0 +1,86 @@
+import config.json.*
+import operations.*
+
+operation adder(): bool[] {
+    bool[5] output;
+    using((cin, a, b, cout) : (qubit, qubit[4], qubit[4], qubit)) {
+        X180(a[0]);
+        X_all(b);
+        majority(cin, b[0], a[0]);
+        majority(a[0], b[1], a[1]);
+        majority(a[1], b[2], a[2]);
+        majority(a[2], b[3], a[3]);
+        CNOT(a[3], cout);
+        unmaj(a[2], b[3], a[3]);
+        unmaj(a[1], b[2], a[2]);
+        unmaj(a[0], b[1], a[1]);
+        unmaj(cin, b[0], a[0]);
+        output[0] = measure(b[0]);
+        output[1] = measure(b[1]);
+        output[2] = measure(b[2]);
+        output[3] = measure(b[3]);
+        output[4] = measure(cout);
+    }
+    return output;
+}
+
+operation majority(a:qubit, b:qubit, c:qubit) : unit {
+    CNOT(c, b);
+    CNOT(c, a);
+    CCNOT(a, b, c);
+}
+
+operation unmaj(a:qubit, b:qubit, c:qubit) : unit {
+    CCNOT(a, b, c);
+    CNOT(c, a);
+    CNOT(a, b);
+}
+
+operation X_all(target: qubit[]) : unit {
+	int i;
+	i = 0;
+	int num_qubits;
+	num_qubits = target.length;
+	while (i < num_qubits) {
+		X180(target[i]);
+		i = i + 1;
+	}
+}
+
+operation apply_all(gate: qubit -> unit, qubits: qubit[]) : unit {
+	int i;
+	i = 0;
+	int num_qubits;
+	num_qubits = qubits.length;
+	while (i < num_qubits) {
+		gate(qubits[i]);
+		i = i + 1;
+	}
+}
+ 
+operation meas_all(qubits: qubit[]) : bool[] {
+	int num_qubits;
+	num_qubits = qubits.length;
+
+	bool[num_qubits] res;
+	int i;
+	i = 0;
+	while (i < num_qubits) {
+		res[i] = measure(qubits[i]);
+		i = i + 1;
+	}
+
+	return res;
+}
+
+operation init_all(target: qubit[]) : unit {
+	apply_all(init, target);
+}
+
+operation init(q: qubit) : unit {
+    bool a;
+    a = measure(q);
+    if (a) {
+        X180(q);
+    }
+}

@@ -1,0 +1,11 @@
+/*
+ * function: test type of statement fundeclaration
+ * structure: "(f?=""function"" | o?=""operation"" | p?=""opaque"") name=ID 
+	 ""("" ( pars+=FormalParameter ( "","" pars+=FormalParameter )* )? "")""
+  	"":"" type=Type  ( block=BlockStatement | "";"" )"
+ * type: correct type
+ * testpoint: for opaque there are no block
+ */
+
+
+opaque test(q0:qubit):unit;

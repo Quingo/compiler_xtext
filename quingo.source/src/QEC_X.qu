@@ -1,0 +1,66 @@
+import config.json.*
+import operations.*
+
+//prepare a bell state
+operation state_preparation(q1: qubit ,q2: qubit ,q3: qubit): unit {
+	init(q1);
+	init(q2);
+	init(q3);
+	Rx90(q1);
+	CNOT(q1, q2);
+	CNOT(q1, q3);
+}
+//choose one bit to be x-fliped
+operation x_flip(q1: qubit ,q2: qubit ,q3: qubit): unit {
+	X180(q2);
+}
+
+operation qec_multiple() : bool[][] {
+	int N; // number of iterations
+	N = 10;
+	bool[N][] result_array;
+	int i;
+	i = 0;
+	while (i < N) {
+		result_array[i] = qec_x_iteration();
+		i = i + 1;
+	}
+	return result_array;
+}
+
+operation qec_x_iteration(): bool[] {
+	bool[3] m;
+	using((q1, q2, q3) : (qubit, qubit, qubit)) {
+		state_preparation(q1, q2,q3);
+		CNOT(q1,q2);
+		CNOT(q1,q3);
+		toffoli(q2,q3,q1);
+
+		m[0] = measure(q1);
+		m[1] = measure(q2);
+		m[2] = measure(q3);
+	}
+	return m;
+}
+
+operation toffoli(control0: qubit, control1: qubit, target: qubit) : unit {
+	H(target);
+
+	CNOT(control1, target);
+	Tdag(target);
+	CNOT(control0, target);
+	T(target);
+
+	CNOT(control1, target);
+	Tdag(target);
+	CNOT(control0, target);
+	Tdag(control1);
+	T(target);
+	H(target);
+
+	CNOT(control0, control1);
+	Tdag(control1);
+	CNOT(control0, control1);
+	T(control0);
+	S(control1);
+}

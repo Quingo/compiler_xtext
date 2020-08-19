@@ -1,0 +1,28 @@
+/*
+ * function: test type of expression ExpFunctionCall
+ * structure: fun(Expression*)
+ * type: faulty type
+ * testpoint: Type of ExpFunctionCall is the same as output of function
+ */
+ 
+ operation syntax_expfunctioncall_test(): unit{
+	bool a;
+	int c;
+	
+	a = fun1(1,{true,false});
+	
+	(int,bool) b = fun2(fun1,1.2);
+	
+	c = fun1({false,false});
+	
+	c = fun1(2,false);
+}
+
+
+operation fun1(a:int, b:bool[]):int{
+	return 1;
+}
+
+operation fun2(a:(int, int[]) -> int,b:double):(int,bool){
+	return (1,true);
+}

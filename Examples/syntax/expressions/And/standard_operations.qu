@@ -1,0 +1,47 @@
+package operations
+
+// "init": {
+//        "duration": 2000,
+//        "type": "init"
+//     },
+// opaque init(c:qubit): unit;
+
+opaque Rx90(q:qubit): unit;
+opaque Y(q:qubit): unit;
+opaque Z(q:qubit): unit;
+opaque Z90(q:qubit): unit;
+opaque Z45(q:qubit): unit;
+opaque Z22_5(q:qubit): unit;
+opaque T(q:qubit): unit;
+opaque Tdag(q:qubit): unit;
+opaque S(q:qubit): unit;
+opaque H(q:qubit): unit;
+opaque CZ(c:qubit, t:qubit): unit;
+opaque U1(q: qubit, theta: double): unit;
+opaque measure(c:qubit): bool;
+opaque X(q:qubit, v:double): unit;
+
+operation X180(q: qubit): unit{
+	X(q, 180.0);
+}
+
+operation init(q: qubit) : unit {
+    bool a = measure(q);
+    if (a) {
+        X180(q);
+    }
+}
+
+operation CNOT(c: qubit, t: qubit): unit
+{
+	H(t);
+	CZ(c, t);
+	H(t);
+}
+
+// operation Tdag(q: qubit): unit {
+// 	Z(q);
+// 	S(q);
+// 	T(q);
+// }
+

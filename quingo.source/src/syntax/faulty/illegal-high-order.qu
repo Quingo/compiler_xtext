@@ -1,0 +1,24 @@
+import operations.*
+
+operation high(fun: qubit->unit, q2: qubit): bool
+{
+	fun(2);
+	fun(q2, 2);
+	q2();
+	return true;
+}
+ 
+operation higher(q: qubit, caller: (qubit->unit, qubit) -> bool, callee: qubit->unit): unit
+{
+	caller(callee);
+	bool a = caller(q, 2);
+}
+
+operation main(): unit
+{
+	using (q0 : qubit) {
+		high(H, q0);
+		higher(q0, high, H);
+		bool a = measure(q0);
+	}
+}

@@ -1,0 +1,11 @@
+/*
+ * To test declaring multiple variable with one line
+ */
+
+operation main(): int[]
+{
+	int a, b=2, c = 3, d;
+	a = 1;
+	d = 4;
+	return {a, b, c, d};
+}

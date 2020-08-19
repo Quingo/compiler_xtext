@@ -1,0 +1,87 @@
+import config.json.*
+import operations.*
+
+operation qrng(): bool {
+    bool a;
+    a = false;
+    using(q: qubit) {
+        init(q);
+        H(q);
+        a = measure(q);
+    }
+
+    return a;
+}
+
+
+operation gen_ran1(): (bool, bool) {
+
+    bool res1;
+    bool res2;
+
+    res1 = qrng();
+    res2 = qrng();
+    return  (res1, res2);
+}
+
+// operation gen_ran2(): (bool, bool, bool) {
+
+//     bool res1;
+//     bool res2;
+
+//     int i;
+//     i = 0;
+
+//     res1 = qrng();
+//     res2 = qrng();
+//     return  (res1, res2, res2);
+// }
+
+operation gen_ran(): (bool, bool) {
+// , bool, bool, bool, bool, bool, bool) {
+
+    bool res1;
+    bool res2;
+    bool res3;
+    bool res4;
+    bool res5;
+    bool res6;
+    bool res7;
+    bool res8;
+    bool res9;
+
+    int i;
+    i = 0;
+
+    res1 = qrng();
+    res2 = qrng();
+    res3 = qrng();
+    res4 = qrng();
+    res5 = qrng();
+    res6 = qrng();
+    res7 = qrng();
+    res8 = qrng();
+    res9 = qrng();
+
+    //return (res1, res2, res3, res4, res5, res6, res7, res8, res9);
+    return  (res1, res2);
+}
+
+operation gen_ran_seq(N: int): bool[] {
+
+    bool[N] res;
+
+    int i;
+    i = 0;
+
+    while (i < N) {
+        res[i] = qrng();
+        i = i + 1;
+    }
+
+    return res;
+}
+
+operation main(): bool[] {
+	return gen_ran_seq(2);
+}

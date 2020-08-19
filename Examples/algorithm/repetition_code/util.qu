@@ -1,0 +1,40 @@
+package util
+import operations.*
+
+operation apply_all(gate: qubit -> unit, qubits: qubit[]) : unit {
+	int i;
+	i = 0;
+	int num_qubits;
+	num_qubits = qubits.length;
+	while (i < num_qubits) {
+		gate(qubits[i]);
+		i = i + 1;
+	}
+}
+ 
+operation meas_all(qubits: qubit[]) : bool[] {
+	int num_qubits;
+	num_qubits = qubits.length;
+
+	bool[num_qubits] res;
+	int i;
+	i = 0;
+	while (i < num_qubits) {
+		res[i] = measure(qubits[i]);
+		i = i + 1;
+	}
+
+	return res;
+}
+
+operation init_all(target: qubit[]) : unit {
+	apply_all(init, target);
+}
+
+operation init(q: qubit) : unit {
+    bool a;
+    a = measure(q);
+    if (a) {
+        X(q);
+    }
+}

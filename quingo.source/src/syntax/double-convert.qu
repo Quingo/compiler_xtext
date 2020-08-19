@@ -1,0 +1,24 @@
+operation dummy(): unit
+{
+	using(q: qubit) {
+		X180(q);
+	}
+}
+
+operation main(): (double[], int[])
+{
+	double a = 0.1;
+	int b = 4;
+	double c = 2.2;
+	int d = 6;
+	using(q: qubit) {
+		init(q);
+		H(q);
+		if (measure(q)) {
+			d = 5;
+			c = 3.3;
+		}
+		X(q, c);
+	}
+	return ({toDouble(b), toDouble(d)},	{toInt(a), toInt(c)});
+}

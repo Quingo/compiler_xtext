@@ -1,0 +1,35 @@
+import config.jason.*
+import operations.*
+
+operation test_if(): (bool, int, int, int)
+{
+	bool a;
+	int b;
+	int c;
+	int g = 4;
+	
+	using (q:qubit) {
+		init(q);
+		H(q);
+		a = measure(q);
+		if (a) {
+			g = 3;
+		}
+	}
+
+	if (true) {
+		b = 1;
+	}
+	else {
+		b = 2;
+	}
+
+	if (false) {
+		c = 1;
+	}
+	else {
+		c = 2;
+	}
+
+	return (a, b, c, g);
+} 

@@ -1,0 +1,33 @@
+/*
+ * function: test type of expression Mult
+ * structure: Expression + Expression, Expression - Expression
+ * type: faulty type
+ * testpoint: type of "mult" must be int or double type except modulo, left and right type should be the same type, double or int. 
+ * Type of modulo  must be int type, left and right type should also be int type
+ */
+ 
+ operation syntax_mult_test(): unit{
+	int result1;
+	double result2;
+	
+	int a;
+	bool b;
+	double c;
+	int[] d;
+	double e;
+	int[] f;
+	(int,int,int) g;
+	(int,int,int) h;
+	
+	
+	result1 = a * c;
+	
+	result2 = c / b;
+	
+	result2 = c % e;
+	
+	d = d * f;
+	
+	g = g / h;
+	
+}

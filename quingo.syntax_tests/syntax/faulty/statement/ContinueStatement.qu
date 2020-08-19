@@ -1,0 +1,23 @@
+/*
+ * function: test type of statement break
+ * structure: "continue"";"
+ * type: faulty type
+ * testpoint: continue not in for, while statements' blocks
+ */
+
+
+operation syntax_continue_test(): unit{
+
+	continue;
+	
+	int a = 2;
+	switch(a){
+		case 1 : {continue;}
+		default:{break;}
+	}
+	
+	if(true){
+		continue;
+	}
+
+}

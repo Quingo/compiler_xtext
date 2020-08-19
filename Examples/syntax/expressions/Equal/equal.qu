@@ -1,0 +1,28 @@
+import operations.*
+
+operation test_equal(): (bool[],bool[])
+{
+	bool[6] result1; 
+	bool[6] result2;
+
+	result1[0] = (1 == 2);
+	result1[1] = (12 == 12);
+	result1[2] = (9.99999 == 10.0);
+	result1[3] = (9.99999 == 9.99999);
+
+	using (q:qubit) {
+		init(q);
+		H(q);
+		result1[4] = measure(q);
+		result1[5] = (true == result1[4]);
+		result2[4] = result1[4];
+		result2[5] = (true != result1[4]);
+	}
+
+	result2[0] = (1 != 2);
+	result2[1] = (12 != 12);
+	result2[2] = (9.99999 != 10.0);
+	result2[3] = (9.99999 != 9.99999);
+
+	return (result1, result2);
+} 

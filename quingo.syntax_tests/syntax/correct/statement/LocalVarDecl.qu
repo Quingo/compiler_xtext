@@ -1,0 +1,25 @@
+/*
+ * function: test type of statement localvardeclaration
+ * structure: type=Type init+=VariableInit ("," init+=VariableInit)* ";"
+ * type: correct type
+ * testpoint: type fit with VariableInit.value type
+ */
+
+operation test():int{
+	return 1;
+}
+
+
+operation syntax_localvardecl_test(): unit{
+
+	bool a;
+	
+	bool b = a;
+	
+	int c = test();
+	
+	double[] d;
+	
+	double e = d[2];
+
+}

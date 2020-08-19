@@ -1,0 +1,22 @@
+/*
+ * function: test type of expression Add
+ * structure: Expression + Expression, Expression - Expression
+ * type: correct type
+ * testpoint: type of "Add" must be int or double type, left and right type should be the same type, double or int
+ */
+
+
+operation syntax_add_test(): unit{
+	int result1;
+	double result2;
+	
+	int a;
+	int b;
+	double c;
+	double d;
+	
+	result1 = a + b;
+	
+	result2 = c + d;
+	
+}

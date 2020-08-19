@@ -1,0 +1,27 @@
+operation bool_int_default(a : bool = true, b: int = 3 * 2): int {
+	if (a) {
+		return b;
+	}
+	return b + 1;
+}
+
+operation array_default(arr: bool[] = {true, false}): bool {
+	return arr[0] && arr[1];
+}
+
+operation tuple_default(t: (bool, int, int[], double) = (true, 1, {1, 2, 3}, 0.5)): (bool, int, int[], double) {
+	return t;
+}
+
+operation test_default_value(): (int[], (bool, int, int[], double)[], bool[]) {
+	int[] int_arr = {bool_int_default(), bool_int_default(false), bool_int_default(true, 0)};
+	(bool, int, int[], double) t1 = tuple_default();
+	(bool, int, int[], double) t2 = tuple_default((false, 2, {4, 3}, 0.25));
+	bool[] bool_arr = {array_default(), array_default({true, false}), array_default({true, true})};
+
+	return (int_arr, {t1, t2}, bool_arr);
+}
+
+operation main(): (int[], (bool, int, int[], double)[], bool[]) {
+	return test_default_value();
+}

@@ -1,0 +1,31 @@
+operation fun(a: (int, bool)): (int, bool)
+{
+	return (1, true);
+}
+
+operation main(): int[]
+{
+	(int, int) a = (2, 3);
+	int b;
+	int c;
+	(b, c) = a;
+	int d;
+	int e;
+	(d, e) = (4, 5);
+	(int, int, int) f = (b, c, d);
+	(c, d, e) = f;
+
+	int g;
+	int h;
+	int i;
+	(g, (h, i)) = (b, (c, d));
+	int j;
+	int k;
+	int l;
+	((j, k), l) = (a, e);
+	
+	(int, bool) m = fun((b, false));
+	fun(m);
+
+	return {b, c, d, e, g, h, i, j, k, l};
+}

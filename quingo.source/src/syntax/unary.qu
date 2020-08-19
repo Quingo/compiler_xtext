@@ -1,0 +1,17 @@
+operation main(): (bool, int, double)
+{
+	bool a = true;
+	int b = 1;
+	double c = 2.1;
+	
+	using(q:qubit) {
+		init(q);
+		H(q);
+		if (measure(q)) {
+			a = !a;
+			b = -b;
+			c = -c;
+		}
+	}
+	return (a, b, c);
+}

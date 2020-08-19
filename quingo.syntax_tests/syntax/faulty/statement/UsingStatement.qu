@@ -1,0 +1,28 @@
+/*
+ * function: test type of statement using
+ * structure: "using" "(" (left?="(")? qvar+=VariableName ("," qvar+=VariableName)* (right?=")")? ":" type=Type ")"
+  block=BlockStatement
+ * type: faulty type
+ * testpoint: for single qvar, type is not qubittype or qubitarray, for multi qvar, type is not tupletype or non-qubit type exists in tuple
+ */
+
+
+operation syntax_using_test(): unit{
+
+	using(q0:int){
+		
+	}
+	
+	using(q1:qubit[],qubit){
+		
+	}
+	
+	using((q,qx):(qubit,(qubit[]))){
+		
+	}
+	
+	using((q,qx,a):(qubit,qubit[],bool)){
+		
+	}
+
+}

@@ -1,0 +1,9 @@
+operation fun(): int
+{
+	return;
+}
+
+operation main(): unit
+{
+	return 1;
+}

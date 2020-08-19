@@ -1,0 +1,10 @@
+operation fun(a: int): unit {
+	
+}
+
+operation main(): unit
+{
+	fun(true);
+	bool a = true;
+	fun(a);
+}

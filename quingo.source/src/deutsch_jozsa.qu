@@ -1,0 +1,51 @@
+import config.jason.*
+import operations.*
+
+operation state_preparation(query: qubit[], answer: qubit): unit {
+	init_all(query);
+	init(answer);
+
+	apply_all(H, query);
+	X180(answer);
+	H(answer);
+}
+
+operation deutsch_jozsa(N: int, oracle: (qubit[], qubit) -> unit): bool {
+	bool is_constant = true;
+
+	using ( (query, answer) : (qubit[N], qubit) ) {
+		state_preparation(query, answer);
+		oracle(query, answer);
+		apply_all(H, query);
+
+		bool[] meas_res = meas_all(query);
+
+		int i = 0;		
+		while (i < N) {
+			//this function is constant iff all measurement results are 0.
+			if (meas_res[i]) {
+				is_constant = false;
+				break;
+			}
+			i = i + 1;
+		}
+		
+		bool a = measure(answer);
+	}
+
+	return is_constant;
+}
+
+// the entry point.
+// Note, this main function is NOT a must.
+operation main(): bool {
+	bool is_constant;
+	is_constant = deutsch_jozsa(2, oracle_zero);
+
+	return is_constant;
+}
+
+// oracle_zero is a constant function with a return value 0 for any value of 2 qubits
+operation oracle_zero(query: qubit[], answer: qubit): unit {
+	//nothing needs to be done
+}

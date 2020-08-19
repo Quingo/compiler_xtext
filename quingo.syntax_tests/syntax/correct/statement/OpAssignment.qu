@@ -1,0 +1,19 @@
+/*
+ * function: test type of statement assignment
+ * structure: left=LeftHandSide op=ASSIGNMENT_OP value=Expression
+ * type: correct type
+ * testpoint: for all op, left type fit with value
+ */
+
+
+operation syntax_opassignment_test(): unit{
+
+	int a;
+	
+	a += 1;
+	
+	double b;
+	
+	b /= 1.1;	
+	
+}

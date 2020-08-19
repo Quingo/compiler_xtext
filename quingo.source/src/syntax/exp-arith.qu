@@ -1,0 +1,9 @@
+operation main(): int[]
+{
+	int a = 2;
+	int b = a + 3;
+	int c = b - a;
+	int d = a * b;
+	int e = d / a;
+	return {b, c, d, e};
+}

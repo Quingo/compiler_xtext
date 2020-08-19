@@ -1,0 +1,17 @@
+import config.jason.*
+import operations.*
+
+operation test_mult(): (int, double, int, double, int)
+{
+	int result1 = 10 * 10;
+
+	double result2 = 9.9999 * 9.9999;
+
+	int result3 = 10 / 2;
+
+	double result4 = 8.8 / 2.2;
+
+	int result5 = 10 % 3;
+
+	return (result1, result2, result3,result4,result5);
+} 

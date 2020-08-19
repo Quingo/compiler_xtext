@@ -1,0 +1,857 @@
+import org.qdt.quingo.quingo.FunDeclaration
+import org.qdt.quingo.quingo.FormalParameter
+import org.qdt.quingo.quingo.LocalVarDecl
+import org.qdt.quingo.quingo.Expression
+import org.qdt.quingo.quingo.Variable
+import org.qdt.quingo.quingo.Type
+import org.qdt.quingo.quingo.FunctionType
+import org.qdt.quingo.quingo.ArrayType
+import org.qdt.quingo.quingo.Or
+import org.qdt.quingo.quingo.And
+import org.qdt.quingo.quingo.Equal
+import org.qdt.quingo.quingo.NEqual
+import org.qdt.quingo.quingo.Add
+import org.qdt.quingo.quingo.Mult
+import org.qdt.quingo.quingo.Unary
+import org.qdt.quingo.quingo.ArrayAccess
+import org.qdt.quingo.quingo.ExpLength
+import org.qdt.quingo.quingo.ExpVariable
+import org.qdt.quingo.quingo.BooleanLiteral
+import org.qdt.quingo.quingo.IntLiteral
+import org.qdt.quingo.quingo.ExpFunctionCall
+import org.qdt.quingo.validation.AbstractQuingoValidator
+import org.qdt.quingo.quingo.FunctionCall
+import org.qdt.quingo.quingo.QubitType
+import org.qdt.quingo.quingo.TupleType
+import org.qdt.quingo.quingo.ExpTuple
+import org.qdt.quingo.quingo.ExpArray
+import org.qdt.quingo.quingo.QuingoFactory
+import org.qdt.quingo.quingo.BoolType
+import org.qdt.quingo.quingo.IntType
+import org.qdt.quingo.quingo.DoubleType
+import org.qdt.quingo.quingo.UnitType
+import org.qdt.quingo.quingo.IfStatement
+import org.qdt.quingo.quingo.ReturnStatement
+import org.qdt.quingo.quingo.OpAssignment
+import org.qdt.quingo.quingo.Assignment
+import org.qdt.quingo.quingo.UsingStatement
+import org.qdt.quingo.quingo.WaitStatement
+import org.qdt.quingo.quingo.ForStatement
+import org.qdt.quingo.quingo.WhileStatement
+import org.qdt.quingo.quingo.SwitchStatement
+import org.qdt.quingo.quingo.DoubleLiteral
+import org.qdt.quingo.quingo.VariableName
+import org.qdt.quingo.quingo.ToInt
+import org.qdt.quingo.quingo.ToDouble
+import org.qdt.quingo.quingo.TimingConstraint
+import com.google.common.collect.Lists
+import org.eclipse.emf.common.util.EList
+
+system org.qdt.quingo.typing.QuingoSemantics
+
+validatorExtends AbstractQuingoValidator
+
+auxiliary {
+	equalTypes(Type type): Boolean // types that can be used with equal operators
+	intdoubleTypes(Type type): Boolean
+	isQubitTypes(Type type): Boolean
+	noQubitTypes(Type type): Boolean
+	noQubitBoolArrayTupleTypes(Type type): Boolean
+	checkFunctionCall(Variable fun, EList<Expression> pars): String
+}
+
+judgments {
+	type |- Variable variable : output Type		//get type of variable
+		error "cannot type " + stringRep(variable)
+		source variable
+	exptype ||-  Expression expression :> output Type 	// get type of expression
+		error "cannot type " + stringRep(expression)
+		source expression
+	copytype |= Type type :> output Type 	// copy the source type
+		error "cannot copy type " + stringRep(type)
+		source type
+	typerelation ||- Type left : Type right		// two types conform
+	expectType |= Expression expression : Type Type 	// expression conform with type
+}
+
+auxiliary equalTypes(Type type) {
+	return (type instanceof BoolType) || (type instanceof IntType) || (type instanceof DoubleType)
+}
+
+auxiliary intdoubleTypes(Type type){
+	return (type instanceof DoubleType) || (type instanceof IntType)
+}
+
+auxiliary isQubitTypes(Type type) {
+	if (type instanceof QubitType) {
+		return true
+	}
+	if (type instanceof ArrayType) {
+		return type.ptype instanceof QubitType
+	}
+	return false
+}
+
+auxiliary noQubitTypes(Type type) {
+	if (type instanceof ArrayType) {
+		return noQubitTypes(type.ptype)
+	}
+	if (type instanceof TupleType) {
+		for (ttype:type.type) {
+			if (!noQubitTypes(ttype)) {
+				return false
+			}
+		}
+	}
+	return !(type instanceof QubitType)
+}
+
+auxiliary noQubitBoolArrayTupleTypes(Type type) {
+	return !((type instanceof QubitType) || (type instanceof BoolType) || 
+		(type instanceof ArrayType) || (type instanceof TupleType)
+	)
+}
+
+auxiliary checkFunctionCall(Variable fun, EList<Expression> pars) {
+	if (fun instanceof FunDeclaration) {
+		if (pars.length < fun.pars.length) {
+			fun.pars.get(pars.length).exp !== null
+			or
+				return "More parameters are needed"
+		}
+		
+		for (var int i=0; i<pars.length; i++) {
+		 	empty |- fun.pars.get(i) : var Type left
+		 	empty |= pars.get(i) : left
+			or
+				return "Type of " + pars.get(i).stringRep + " is not matching " + fun.pars.get(i).stringRep + " type"
+		}
+	}
+	else {
+		empty |- fun : var Type tfun
+		if (!(tfun instanceof FunctionType)) {
+			return fun.stringRep + " is not a function"
+		}
+
+		var left = (tfun as FunctionType).left
+		if (left instanceof TupleType) {
+			pars.length == left.type.length
+			or
+				return fun.stringRep + " accepts " + left.type.length + " parameters"
+
+			for (var int i=0; i<pars.length; i++) {
+			 	empty |= pars.get(i) : left.type.get(i)
+				or
+					return "type of " + pars.get(i).stringRep + " is not matching " + left.type.get(i).stringRep + " type"
+			}
+		}
+		else if (left instanceof UnitType) {
+			pars.length == 0
+			or
+				return fun.stringRep + " does not accepts parameters"
+		}
+		else {
+			pars.length == 1
+			or
+				return fun.stringRep + " accepts one parameter"
+
+		 	empty |= pars.get(0) : left
+			or
+				return "type of " + pars.get(0).stringRep + " is not matching " + left.stringRep + " type"
+		}
+	}
+	return ""
+}
+
+axiom FunDeclarationType
+	G |- FunDeclaration variable : variable.type
+ 
+axiom FormalParameterType
+	G |- FormalParameter variable : variable.type
+
+rule VariableType
+	G |- VariableName variable: Type type
+from {
+	var parent = variable.eContainer
+	if (parent instanceof UsingStatement) {
+		var ptype = parent.type
+		if (parent.left) {
+			var ttype = (ptype as TupleType).type
+			for (var i=0; i<parent.qvar.length; i++) {
+				if (parent.qvar.get(i) == variable) {
+					type = ttype.get(i)
+				}
+			}
+		}
+		else {
+			type = ptype
+		}
+	}
+	else {
+		var local = parent.eContainer as LocalVarDecl
+		type = local.type
+	}
+}
+
+axiom OrType
+	G ||- Or exp :> QuingoFactory::eINSTANCE.createBoolType
+
+axiom AndType
+	G ||- And exp :> QuingoFactory::eINSTANCE.createBoolType
+
+axiom EqualType
+	G ||- Equal exp :> QuingoFactory::eINSTANCE.createBoolType
+
+axiom NEqualType
+	G ||- NEqual exp :> QuingoFactory::eINSTANCE.createBoolType
+
+rule AddType
+	G ||- Add exp :> Type type
+from{
+	G ||- exp.left :> type
+}
+
+rule MultType
+	G ||- Mult exp :> Type type
+from {
+	G ||- exp.left :> type
+}
+
+rule UnaryType
+	G ||- Unary exp :> Type type
+from {
+	G ||- exp.final :> type
+}
+
+rule ArrayAccessType
+	G ||- ArrayAccess exp :> Type type
+from {	
+	G ||- exp.array :> var ArrayType otype
+	G |= otype.ptype :> type
+}
+
+axiom ExpLengthType
+	G ||- ExpLength exp :> QuingoFactory::eINSTANCE.createIntType
+
+rule ExpVariableType
+	G ||- ExpVariable exp :> Type type
+from {
+	if (exp.value instanceof FunDeclaration) {
+		type = QuingoFactory::eINSTANCE.createFunctionType => [
+			val fun = exp.value as FunDeclaration
+			G |- fun : var Type tright
+			G |= tright :> var Type cright
+			it.right = cright
+			
+			val pars = fun.pars
+			if (pars.length == 0) {
+				it.left = QuingoFactory::eINSTANCE.createUnitType
+			}
+			else if (pars.length === 1) {
+				G |= pars.get(0).type :> var Type cpar
+				it.left = cpar
+			}
+			else {
+				var tuple = QuingoFactory::eINSTANCE.createTupleType => [
+					for (par: pars) {
+						G |= par.type :> var Type cpar
+						it.type += cpar
+					}
+				]
+				it.left = tuple
+			}
+		]
+	}
+	else {
+		G |- exp.value : var Type otype
+		G |= otype :> type
+	}
+}
+
+axiom BooleanLitType
+	G ||- BooleanLiteral exp :> QuingoFactory::eINSTANCE.createBoolType
+
+axiom IntLiteralType
+	G ||- IntLiteral exp :> QuingoFactory::eINSTANCE.createIntType
+
+axiom DoubleLiteralType
+	G ||- DoubleLiteral exp :> QuingoFactory::eINSTANCE.createDoubleType
+
+rule ExpTupleType
+	G ||- ExpTuple exp :> Type type
+from {
+	if (exp.texp.length === 1) {
+		G ||- exp.texp.get(0) :> type
+	}
+	else {
+		type = QuingoFactory::eINSTANCE.createTupleType => [
+			for (texp: exp.texp) {
+				G ||- texp :> var Type ttype
+				G |= ttype :> var Type ctype
+				it.type += ctype
+			}
+		]
+	}
+}
+
+rule ExpFunctionCallType
+	G ||- ExpFunctionCall fun :> Type type
+from {
+	G |- fun.fun : var Type otype
+	if (fun.fun instanceof FunDeclaration) {
+		G |= otype :> type
+	}
+	else { // FormalParameter, for high-order function calls
+		G |= (otype as FunctionType).right :> type
+	}
+}
+
+rule ExpArrayType
+	G ||- ExpArray fun :> Type type
+from {
+	type = QuingoFactory::eINSTANCE.createArrayType => [
+		G ||- fun.exp.get(0) :> var Type ptype
+		G |= ptype :> var Type ctype
+		it.ptype = ctype
+	]
+}
+
+axiom ToIntType
+	G ||- ToInt exp :> QuingoFactory::eINSTANCE.createIntType
+
+axiom ToDoubleType
+	G ||- ToDouble exp :> QuingoFactory::eINSTANCE.createDoubleType
+
+axiom IntRelation
+	G ||- IntType left : IntType right
+
+axiom BoolRelation
+	G ||- BoolType left : BoolType right
+
+axiom DoubleRelation
+	G ||- DoubleType left : DoubleType right
+
+axiom UnitRelation
+	G ||- UnitType left : UnitType right
+
+axiom QubitRelation
+	G ||- QubitType left : QubitType right
+
+rule ArrayTypeRelation
+	G ||- ArrayType left : ArrayType right
+from {
+	G ||- left.ptype : right.ptype
+}
+
+rule TupleTypeRelation
+	G ||- TupleType left : TupleType right
+from {
+	left.type.length === right.type.length	
+	for (var int i=0; i<left.type.length; i++){
+		var lefttype = left.type.get(i)
+		var righttype = right.type.get(i)
+		G ||- lefttype : righttype
+	}
+}
+
+rule FunctionTypeRelation
+	G ||- FunctionType left : FunctionType right
+from{
+	G ||- left.left : right.left
+	G ||- left.right : right.right
+}
+
+rule FunCallRelation
+	G ||- Type left : FunctionType right
+from{
+	G ||- left : right.right
+}
+
+axiom CopyIntType
+	G |= IntType type :> QuingoFactory::eINSTANCE.createIntType
+
+axiom CopyBoolType
+	G |= BoolType type :> QuingoFactory::eINSTANCE.createBoolType
+
+axiom CopyDoubleType
+	G |= DoubleType type :> QuingoFactory::eINSTANCE.createDoubleType
+
+axiom CopyQubitType
+	G |= QubitType type :> QuingoFactory::eINSTANCE.createQubitType
+
+axiom CopyUnitType
+	G |= UnitType type :> QuingoFactory::eINSTANCE.createUnitType
+
+rule CopyTupleType
+	G |= TupleType type :> TupleType out
+from {
+	out = QuingoFactory::eINSTANCE.createTupleType => [
+		for (ttype: type.type) {
+			G |= ttype :> var Type tout
+			it.type += tout
+		}
+	]
+}
+
+rule CopyArrayType
+	G |= ArrayType type :> ArrayType out
+from {
+	out = QuingoFactory::eINSTANCE.createArrayType => [
+		G |= type.ptype :> var Type pout
+		it.ptype = pout
+	]
+}
+
+rule CopyFunctionType
+	G |= FunctionType type :> FunctionType out
+from {
+	out = QuingoFactory::eINSTANCE.createFunctionType => [
+		G |= type.left :> var Type lout
+		it.left = lout
+		G |= type.right :> var Type rout
+		it.right = rout
+	]
+}
+
+rule ExpectType
+	G |= Expression exp : Type type
+from {
+	G ||- exp :> var Type eType
+	G ||- eType : type
+}
+
+checkrule AndCheck for
+	And exp
+from {
+	var booltype = QuingoFactory::eINSTANCE.createBoolType
+	empty |= exp.left : booltype
+	or
+		fail
+		error "Only bool type can be used with operator &&"
+	empty |= exp.right : booltype
+	or
+		fail
+		error "Only bool type can be used with operator &&"
+}
+
+checkrule OrCheck for
+	Or exp
+from {
+	var booltype = QuingoFactory::eINSTANCE.createBoolType
+	empty |= exp.left : booltype
+	or
+		fail
+		error "Only bool type can be used with operator ||"
+	empty |= exp.right : booltype
+	or
+		fail
+		error "Only bool type can be used with operator ||"
+}
+
+checkrule EqualCheck for
+	Equal exp
+from {
+	empty ||- exp.left :> var Type lefttype
+	if (!equalTypes(lefttype)) {
+		fail
+		error "Only bool, double or int type can compare"
+	}
+	empty ||- exp.right :> var Type righttype
+	if (!equalTypes(righttype)) {
+		fail
+		error "Only bool, double or int type can compare"
+	}
+	empty ||- lefttype : righttype
+	or
+		fail
+		error "The right side of " + exp.op + " does not match the left!"
+}
+
+checkrule NequalCheck for
+	NEqual exp
+from {
+	empty ||- exp.left :> var Type lefttype
+	if (!intdoubleTypes(lefttype)) {
+		fail
+		error "Only double or int type can compare size"
+	}
+	empty ||- exp.right :> var Type righttype
+	if (!intdoubleTypes(righttype)) {
+		fail
+		error "Only double or int type can compare size"
+	}
+	empty ||- lefttype : righttype
+	or
+		fail
+		error "The right side of " + exp.op + " does not match the left!"
+}
+
+checkrule AddCheck for
+	Add exp
+from {
+	empty ||- exp.left :> var Type lefttype
+	if (!intdoubleTypes(lefttype)) {
+		fail
+		error "Only double or int type can add"
+	}
+	empty ||- exp.right :> var Type righttype
+	if (!intdoubleTypes(righttype)) {
+		fail
+		error "Only double or int type can add"
+	}
+	empty ||- lefttype : righttype
+	or
+		fail
+		error "The right side of " + exp.op + " does not match the left!"
+}
+
+checkrule MultCheck for
+	Mult exp
+from {
+	empty ||- exp.left :> var Type lefttype
+	if (!intdoubleTypes(lefttype)) {
+		fail
+		error "Only double or int type can multiply"
+	}
+	empty ||- exp.right :> var Type righttype
+	if (!intdoubleTypes(righttype)) {
+		fail
+		error "Only double or int type can multiply"
+	}
+	
+	if (exp.op == "%") {
+		empty ||- lefttype : QuingoFactory::eINSTANCE.createIntType
+		or
+			fail
+			error "Only int type can mudulo"
+			
+		empty ||- righttype : QuingoFactory::eINSTANCE.createIntType
+		or
+			fail
+			error "Only int type can mudulo"
+	}
+	else {	
+		empty ||- lefttype : righttype
+		or
+			fail
+			error "The right side of " + exp.op + " does not match the left!"	
+	}
+}
+
+checkrule UnaryCheck for
+	Unary exp
+from {
+	empty ||- exp.final :> var Type type
+	if (exp.op == "!"){
+		empty ||- type : QuingoFactory::eINSTANCE.createBoolType
+		or
+			fail
+			error "Only bool type can uesd for NOT"
+	}
+	else {	
+		if (!intdoubleTypes(type)) {
+			fail
+			error "Only double or int type can add"
+		}
+	}
+}
+
+checkrule ArrayAccessCheck for
+	ArrayAccess exp
+from {
+	empty |= exp.dim : QuingoFactory::eINSTANCE.createIntType
+	or
+		fail
+		error "Only int type can uesd for array dimension"
+}
+
+checkrule ExpLengthCheck for
+	ExpLength exp
+from {
+	empty ||- exp.left :> var Type type
+	if (!(type instanceof ArrayType)) {
+		fail
+		error "Only arrays can have length"
+	}
+}
+
+checkrule FunCallCheck for
+	FunctionCall stat
+from {
+	var message = checkFunctionCall(stat.fun, stat.pars)
+	message == ""
+	or
+		fail
+		error message
+}
+
+checkrule ExpFunCall for
+	ExpFunctionCall exp
+from {
+	var message = checkFunctionCall(exp.fun, exp.pars)
+	message == ""
+	or
+		fail
+		error message
+}
+
+checkrule ReturnCheck for
+	ReturnStatement stat
+from {
+	var container = stat.eContainer
+	while (!(container instanceof FunDeclaration)) {
+		container = container.eContainer
+	}
+ 	empty |- container as FunDeclaration : var Type right
+ 	if (stat.value === null) {
+	 	empty ||- QuingoFactory::eINSTANCE.createUnitType : right
+		or
+			fail
+			error "No return value"
+ 	}
+ 	else {
+	 	empty |= stat.value : right
+		or
+			fail
+			error "Return type does not conform to operation type"
+ 	}
+}
+
+checkrule FunDeclarationCheck for 
+	FunDeclaration fun
+ from {
+ 	empty |- fun : var Type left
+	noQubitTypes(left)
+	or
+		fail
+		error "Cannot return qubit"
+
+	var hasDefault = true
+	for (par: Lists.reverse(fun.pars)) {
+		if (par.exp === null) {
+			hasDefault = false
+		}
+		else if (hasDefault) {
+		 	empty |= par.exp : par.type
+		 	or
+		 		fail
+		 		error "type of " + par.exp.stringRep + " does not match " + par.type.stringRep
+		}
+		else {
+			fail
+			error "The default values should be specified from right to left"
+		}
+	}
+
+	if (fun.o && !(fun.type instanceof UnitType)) {
+		fun.block.eAllContents.toIterable.filter(ReturnStatement).length > 0
+		or
+			fail
+			error "No return statement is found"
+	}
+	
+	if (fun.p && (fun.block !== null)) {
+		fail
+		error "opaque do not need block"
+	}
+}
+    
+checkrule OpAssignmentCheck for
+ 	OpAssignment stat
+from { 	
+ 	var exp = stat.left as Expression
+ 	empty ||- exp :> var Type left
+	noQubitBoolArrayTupleTypes(left)
+	or
+		fail
+		error "Qubit, Bool, Array and Tuple cannot be calculated"
+
+ 	empty |= stat.right : left
+ 	or
+ 		fail
+ 		error "type of " + stat.left.stringRep + " is not matching " + stat.right.stringRep
+}
+
+checkrule AssignmentCheck for
+ 	Assignment stat
+from {
+ 	var exp = stat.left as Expression
+ 	empty ||- exp :> var Type left
+	noQubitTypes(left)
+	or
+		fail
+		error "Qubit cannot be assigned"
+
+ 	empty |= stat.value : left
+ 	or
+ 		fail
+ 		error "type of " + stat.left.stringRep + " is not matching " + stat.value.stringRep
+}
+
+checkrule LocalVarDeclCheck for
+ 	LocalVarDecl variable
+from {
+	if (variable.type instanceof FunctionType)
+	{
+		fail
+		error "variable can not be defined as function type"
+	}
+
+	noQubitTypes(variable.type)
+ 	or
+ 		fail
+ 		error "Local variable type cannot contain qubit type"
+ 	
+ 	for (init: variable.init) {
+	 	if (init.value !== null) {
+	 		var exp = init.value
+ 			empty |= exp : variable.type
+ 			or
+ 				fail
+ 				error "Type of " + init.varName.name + " is not matching " + exp.stringRep
+	 	}
+	}
+}
+
+checkrule ExpArrayCheck for
+	ExpArray expression
+from {
+	if (expression.exp.length > 1) {
+		empty ||- expression.exp.get(0) :> var Type type
+ 		for (var int i=1; i<expression.exp.length; i++) {
+			empty |= expression.exp.get(i) : type
+			or
+				fail
+				error "The element types in the ExpArray do not conform"	
+		}
+	}
+}
+
+checkrule ToIntCheck for
+	ToInt exp
+from {
+	empty ||- exp.value :> var Type type
+	if (!(type instanceof IntType) && !(type instanceof DoubleType)) {
+		fail
+		error exp.value.stringRep + " cannot be converted to int"
+	}
+}
+
+checkrule ToDoubleCheck for
+	ToDouble exp
+from {
+	empty ||- exp.value :> var Type type
+	if (!(type instanceof IntType) && !(type instanceof DoubleType)) {
+		fail
+		error exp.value.stringRep + " cannot be converted to double"
+	}
+}
+
+checkrule UsingStatCheck for
+	UsingStatement usingstatement
+from {
+	if (usingstatement.qvar.length == 1) {
+		isQubitTypes(usingstatement.type)
+		or
+			fail
+			error usingstatement.type.stringRep + " is not a qubit type"
+	}
+	else {
+		if (!(usingstatement.type instanceof TupleType)) {
+			fail
+			error "type and QubitVariable number not equal"
+		}
+		
+		var tupletype = usingstatement.type as TupleType
+		usingstatement.qvar.length == tupletype.type.length
+		or
+			fail
+			error "type and QubitVariable number not equal"
+
+		for (ttype: tupletype.type) {
+			isQubitTypes(ttype)
+			or
+				fail
+				error ttype.stringRep + " is not a qubit type"
+		}
+	}	
+}
+
+checkrule WaitCheck for
+	WaitStatement waitstatement
+from {
+	var length = waitstatement.lis.length
+	length >= 2
+	or
+		fail
+		error "No enough parameters for a wait statement"
+	for (var i=0; i<length-1; i++) {
+		empty ||- waitstatement.lis.get(i) :> var Type ltype
+		if (ltype instanceof ArrayType) {
+			var ptype = ltype.ptype
+			empty ||- ptype : QuingoFactory::eINSTANCE.createQubitType
+			or
+				fail
+				error waitstatement.lis.get(i).stringRep + " is not a qubit array"
+		}
+		else {
+			empty ||- ltype : QuingoFactory::eINSTANCE.createQubitType
+			or
+				fail
+				error waitstatement.lis.get(i).stringRep + " is not a qubit"
+		}	
+	}
+	empty |= waitstatement.lis.get(length - 1) : QuingoFactory::eINSTANCE.createIntType
+	or
+		fail
+		error waitstatement.lis.get(length - 1).stringRep + " is not an int"
+}
+
+checkrule ForCheck for
+	ForStatement forstatement
+from {
+	empty |= forstatement.cond : QuingoFactory::eINSTANCE.createBoolType
+	or
+		fail
+		error "Condition has to be bool type in a FOR loop"
+}
+
+checkrule WhileCheck for
+	WhileStatement whilestatement
+from {
+	empty |= whilestatement.expression : QuingoFactory::eINSTANCE.createBoolType
+	or
+		fail
+		error "Condition has to be bool type in a While loop"
+}
+
+checkrule IfCheck for
+	IfStatement ifstatement
+from {
+	empty |= ifstatement.expression : QuingoFactory::eINSTANCE.createBoolType
+	or
+		fail
+		error "Condition has to be bool type in a if statement"
+}
+
+checkrule SwitchCheck for
+	SwitchStatement switchstatement
+from {
+	empty ||- switchstatement.expression :> var Type switchtype
+	for(stat:switchstatement.block){
+		empty ||- stat.exp :> var Type casetype
+		empty ||- switchtype : casetype
+		or
+			fail
+			error "type of " + stat.exp.stringRep + " not fit with switch type"
+	}
+}
+
+checkrule TimingCheck for
+	TimingConstraint stat
+from {
+	empty |= stat.value : QuingoFactory::eINSTANCE.createIntType
+	or
+		fail
+		error "The value in timing constraints must be int type"
+}

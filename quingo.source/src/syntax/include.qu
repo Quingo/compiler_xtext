@@ -1,0 +1,10 @@
+include "../config.qfg"
+include "../standard_operation.qu"
+
+operation main(): unit
+{
+	using(q: qubit) {
+		H(q);
+		measure(q);
+	}
+}

@@ -1,0 +1,12 @@
+/*
+ * function: test type of statement break
+ * structure: "break"";"
+ * type: faulty type
+ * testpoint: break not in loop
+ */
+
+
+operation syntax_break_test(): unit{
+
+	break;
+}

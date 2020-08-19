@@ -1,0 +1,46 @@
+import config.json.*
+import operations.*
+
+operation dummy(): unit
+{
+	using(q: qubit) {
+		X180(q);
+		measure(q);
+	}
+}
+
+operation bellStateLoop(num:int): bool[][] {
+    bool[num][2] bArr;
+    bool[2] b;
+    int k;
+
+    b = {false, false};
+    
+    k = 0;
+    while(k < num){
+        bArr[k] = {false, false};
+        k = k + 1;
+    }
+
+//|Phi+>: 00+11
+    using(q: qubit[2]){
+        k = 0;
+        while(k < num){
+            init_all(q);
+            H(q[0]);
+            CNOT(q[0],q[1]);
+            b = meas_all(q);
+            bArr[k] = b;
+            k = k + 1;
+        }
+    }
+     return bArr;
+}
+
+operation main(): bool[][] {
+
+	int var0_int;
+	var0_int = 100;
+
+	return bellStateLoop(var0_int);
+}

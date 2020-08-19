@@ -1,0 +1,20 @@
+/*
+ * function: test type of statement switch
+ * structure: "switch" "(" expression=Expression ")" "{" block+=SwitchBlock* (def=DefaultBlock)? "}";
+  block=BlockStatement
+ * type: correct type
+ * testpoint: block.exp same type with expression
+ */
+
+
+operation syntax_switch_test(): unit{
+
+	int a;
+	
+	switch(a){
+		case 1:{}
+		case 2:{}
+		default:{}
+	}
+
+}

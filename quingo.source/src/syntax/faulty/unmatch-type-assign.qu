@@ -1,0 +1,5 @@
+operation main(): unit
+{
+	int a = true;
+	bool b = 1;
+}

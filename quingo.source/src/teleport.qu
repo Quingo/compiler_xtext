@@ -1,0 +1,18 @@
+import config.json.*
+import operations.*
+
+operation main(): bool[] {
+    bool[2] output;
+    using(q : qubit[3]) {
+        H(q[0]);
+        H(q[1]);
+        CNOT(q[1], q[2]);
+        CNOT(q[0], q[1]);
+        H(q[0]);
+        CNOT(q[1], q[2]);
+        CZ(q[0], q[2]);
+        output[0] = measure(q[0]);
+        output[1] = measure(q[1]);
+    }
+    return output;
+}

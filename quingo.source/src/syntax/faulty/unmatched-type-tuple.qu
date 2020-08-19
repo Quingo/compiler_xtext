@@ -1,0 +1,17 @@
+/*operation fun(): (int, int)
+{
+	return (1, true);
+}
+
+operation bar(a:(int, bool)): unit
+{
+}*/
+
+operation main(): unit
+{
+	(int, int) a = 2;
+	bool b = true;
+	a = (2, b);
+	//bar(a);
+	//(int, bool) c = fun();
+}

@@ -1,0 +1,10 @@
+import operations.*
+
+operation main(): unit
+{
+	using(q: qubit) {
+		X(q, 1.6);
+		X(q, -1.6);
+		measure(q);
+	}
+}

@@ -1,0 +1,20 @@
+import operations.*
+
+operation main(): bool[]
+{
+	bool[3] b;
+	using((q, qa): (qubit, qubit[3])) {
+		for (int i=0; i<3; i+=1) {
+			H(qa[i]);
+			b[i] = measure(qa[i]);
+			if (b[i]) {
+				continue;
+			}
+			bool a = measure(q);
+			if (a) {
+				break;
+			}
+		}
+	}
+	return b;
+}

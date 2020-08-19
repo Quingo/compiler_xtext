@@ -1,0 +1,43 @@
+/*
+ * function: test type of expression Nequal
+ * structure: Expression >= Expression, Expression > Expression, Expression <= Expression, Expression < Expression
+ * type: faulty type
+ * testpoint: type of "Nequal" must be bool, left and right type should be the same type, int or double
+ */
+
+
+operation syntax_equal_test(): bool{
+	bool result;
+	
+	int a;
+	bool b;
+	int c;	
+	bool[] d;
+	double e;
+	(int,bool) f;
+	bool[][] g;
+	(double,int) h;
+	bool i;
+	
+	result = a >= b;
+	
+	result = d >= b;
+	
+	result = e >= b;
+	
+	result = f >= b;
+	
+	using (q:qubit) {
+		result = q >= b;
+	}
+	
+	result = d >= g;
+	
+	result = f >= h;
+	
+	result = b >= i;
+	
+	
+	return result;
+	
+}

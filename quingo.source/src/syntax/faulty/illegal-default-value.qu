@@ -1,0 +1,16 @@
+operation not_left_most(a: int = 0, b: int): unit
+{	
+}
+
+operation unmateched_type(a: int = true): unit
+{
+}
+
+operation legal(a : int, b : int = 0): unit
+{
+}
+
+operation caller(): unit
+{
+	legal();
+}

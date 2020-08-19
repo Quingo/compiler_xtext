@@ -1,0 +1,5 @@
+operation main(): unit {
+	bool a = true && 1;
+	a = 3 || false;
+	int b = 2 + true;
+}

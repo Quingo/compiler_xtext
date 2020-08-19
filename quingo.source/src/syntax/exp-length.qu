@@ -1,0 +1,6 @@
+operation main(): int[]
+{
+	int[] a = {1, 2};
+	int[3][3] b;
+	return {a.length, b[1].length};
+}

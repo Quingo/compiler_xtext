@@ -1,0 +1,12 @@
+import config.json.*
+import operations.*
+
+operation random(): bool {
+    bool output;
+    using(cin : qubit) {
+        H(cin);
+        output = measure(cin);
+        
+    }
+    return output;
+}

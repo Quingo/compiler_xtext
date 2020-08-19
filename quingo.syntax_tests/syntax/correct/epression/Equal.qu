@@ -1,0 +1,31 @@
+/*
+ * function: test type of expression equal
+ * structure: Expression == Expression, Expression != Expression
+ * type: correct type
+ * testpoint: type of "equal" must be bool, left and right should be tuple with int and bool, bool, int type
+ */
+
+
+operation syntax_equal_test(): bool{
+	bool result;
+	
+	bool a;
+	bool b;
+	int c;
+	int d;
+	double i;
+	double j;	
+	
+	result = a == b;
+	
+	result = c != d;
+	
+	result = i == j;
+	
+	result = i == 1.0;
+	
+
+	
+	return result;
+	
+}

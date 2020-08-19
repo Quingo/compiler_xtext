@@ -1,0 +1,38 @@
+import operations.*
+
+operation fun_unit(): unit
+{
+	using(q: qubit) {
+		H(q);
+	}
+}
+
+operation high(fun: qubit->unit, q2: qubit): unit
+{
+	fun(q2);
+}
+ 
+operation high_return(fun: qubit->bool, q2: qubit): bool
+{
+	return fun(q2);
+}
+
+operation high_unit(fun: unit->unit): unit
+{
+	fun();
+}
+ 
+operation higher(q: qubit, caller: (qubit->unit, qubit) -> unit, callee: qubit->unit): unit
+{
+	caller(callee, q);
+}
+
+operation main(): bool
+{
+	using (q0 : qubit) {
+		high(H, q0);
+		high_unit(fun_unit);
+		higher(q0, high, H);
+		return high_return(measure, q0);
+	}
+}

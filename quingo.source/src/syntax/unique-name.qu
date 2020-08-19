@@ -1,0 +1,23 @@
+operation main(): int[]
+{
+	int a = 1;
+	//int a; // will raise an error
+	int b;
+	int c;
+	{
+		int a = 2;
+		{
+			int a = 3;
+			c = a;
+		}
+		b = a;
+	}
+	return {a, b, c};
+}
+
+//operation main(): unit {} // will raise an error
+ 
+operation fun(): unit
+{
+	int a; // different operations can have variables with the same name
+}

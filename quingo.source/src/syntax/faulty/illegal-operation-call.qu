@@ -1,0 +1,8 @@
+operation fun(): unit
+{
+}
+
+operation main(): unit
+{
+	fun(1);
+}

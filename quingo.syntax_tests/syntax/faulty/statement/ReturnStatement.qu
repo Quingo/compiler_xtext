@@ -1,0 +1,21 @@
+/*
+ * function: test type of statement if
+ * structure: return value=Expression ";"
+ * type: faulty type
+ * testpoint: type of "value" fit function type
+ */
+
+
+operation syntax_return_test1(): unit{
+
+	return 1;
+}
+
+operation syntax_return_test2(): (int,double){
+	
+}
+
+operation syntax_return_test3(): bool[]{
+
+	return {1,1};
+}

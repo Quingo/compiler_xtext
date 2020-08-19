@@ -1,0 +1,17 @@
+import config.jason.*
+import operations.*
+
+operation test_typechange(): (int, int, int, double, double)
+{
+	int result1 = toInt(10);
+
+	int result2 = toInt(9.1);
+
+	int result3 = toInt(9.5);
+
+	double result4 = toDouble(9.99);
+
+	double result5 = toDouble(10);
+
+	return (result1, result2, result3, result4, result5);
+} 

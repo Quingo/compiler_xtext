@@ -1,0 +1,49 @@
+import config.jason.*
+import operations.*
+
+operation ramsey_iteration(intervals: int[]): bool[] {
+	int K = intervals.length;
+	bool[K] result_arr;
+
+	int i;
+	i = 0;
+	while(i < K) {
+		using (target: qubit) {
+			init(target);
+	
+			Rx90(target);
+			wait(target, intervals[i]);
+			Rx90(target);
+	
+			result_arr[i] = measure(target);
+	
+			i = i + 1;
+		}
+	}
+
+	return result_arr;
+}
+
+//K表示取样点的数目，N表示每个取样点所制备的量子的数目。最终的结果是N * K的二维数组。
+operation ramsey(intervals: int[], N: int): bool[][] {
+	int K = intervals.length;
+	bool[N][K] results;
+
+	int i;
+	i = 0;
+	while(i < N) {
+		results[i] = ramsey_iteration(intervals);
+
+		i = i + 1;
+	}
+	
+	return results;
+}
+
+operation main(): bool[][]
+{
+	// perform the experiment on qubit 0 for 1024 times.
+	// How to transfer the intervals to the kernel?
+	// support interval has 24 elements
+	return ramsey({1, 2, 3}, 4);
+}

@@ -1,0 +1,25 @@
+/*
+ * function: test type of statement break
+ * structure: "break"";"
+ * type: correct type
+ * testpoint: break in for, while, and swithc statements' blocks
+ */
+
+
+operation syntax_break_test(): unit{
+
+	while(true){
+		break;
+	}
+	
+	for(int i=0; i < 3; i+=1){
+		break;
+	}
+	
+	int a = 2;
+	switch(a){
+		case 1 : {break;}
+		default:{break;}
+	}
+
+}

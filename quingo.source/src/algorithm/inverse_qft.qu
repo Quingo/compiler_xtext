@@ -1,0 +1,36 @@
+import config.json.*
+import operations.*
+import util.*
+
+operation H_all(target: qubit[]) : unit {
+	int i;
+	i = 0;
+	int num_qubits;
+	num_qubits = target.length;
+	while (i < num_qubits) {
+		H(target[i]);
+		i = i + 1;
+	}
+}
+
+operation main(): unit {
+    bool[4] output;
+    using(q : qubit[4]) {
+        init_all(q);
+        H_all(q);
+        H(q[0]);
+        output[0] = measure(q[0]);
+        if(output[0]) { Z45(q[1]); }
+        H(q[1]);
+        output[1] = measure(q[1]);
+        if(output[0]) { Z45(q[2]); }
+        if(output[1]) { Z90(q[2]); }
+        H(q[2]);
+        output[2] = measure(q[2]);
+        if(output[0]) { Z22_5(q[3]); }
+        if(output[1]) { Z45(q[3]); }
+        if(output[2]) { Z90(q[3]); }
+        H(q[3]);
+        output[3] = measure(q[3]);
+    } 
+}

@@ -1,0 +1,27 @@
+/*
+ * function: test type of statement assignment
+ * structure: left=LeftHandSide "=" value=Expression
+ * type: faulty type
+ * testpoint: left type fit with value
+ */
+
+
+operation syntax_assignment_test(): unit{
+
+	int a;
+	double b;
+	bool c;
+	(int, (double, bool), int) d;
+	int[][] e;
+	int[] f;
+	
+	a = 1.1;
+	
+	b = 1;
+	
+	c = a;
+
+	d = (1,(b,c),a,a);
+	
+	e[0] = {{1,f[0]}};
+}

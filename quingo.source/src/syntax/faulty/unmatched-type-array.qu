@@ -1,0 +1,25 @@
+operation fun(): (int, int)
+{
+	return (1, true);
+}
+
+operation bar(a: bool[]): unit
+{
+}
+
+operation main(): unit
+{
+	int[] a = 2;
+	a = {true};
+	int[] b = {true};
+	b = {{1}};
+	int[][] c = {1, 2};
+	int d = {1, 2};
+	
+	a = {1, 2, 3};
+	bool e = a[0];
+	
+	bar({1, 2});
+	bar(a);
+	//(int, bool) c = fun();
+}

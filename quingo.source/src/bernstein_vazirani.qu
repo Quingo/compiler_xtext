@@ -1,0 +1,52 @@
+import config.jason.*
+import operations.*
+
+operation state_preparation(query: qubit[], answer: qubit): unit {
+	init_all(query);
+	init(answer);
+
+	apply_all(H, query);
+
+	X180(answer);
+	H(answer);
+}
+
+operation bernstein_vazirani(N: int, oracle: (qubit[], qubit) -> unit): bool[] {
+
+	bool[N] result_arr;
+
+	using ( (query, answer) : (qubit[N], qubit)) {
+		state_preparation(query, answer);
+
+		oracle(query, answer);
+
+		apply_all(H, query);
+
+		result_arr = meas_all(query);
+		bool a = measure(answer);
+	}
+
+	return result_arr;
+}
+
+
+// the entry point.
+// Note, this main function is NOT a must.
+operation main(): bool[] {
+
+	return bernstein_vazirani(3, oracle_all_one);
+
+}
+
+// oracle_all_one is a function with a return value 1 for quantum state |1..1> only, with 0 for the
+// others.
+operation oracle_all_one(query: qubit[], answer: qubit): unit {
+
+	int i;
+	i = 0;
+	while (i < query.length) {
+		CNOT(query[i], answer);
+		i = i + 1;
+	}
+
+}

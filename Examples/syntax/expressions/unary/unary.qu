@@ -1,0 +1,21 @@
+import config.jason.*
+import operations.*
+
+operation test_unary(): (int, double, (bool, bool))
+{
+	int result1 = +10;
+
+	double result2 = -(-9.99);
+
+	bool a;
+	bool result3;
+
+	using (q:qubit) {
+		init(q);
+		H(q);
+		a = measure(q);
+		result3 = ! a;
+	}
+
+	return (result1, result2, (a, result3));
+} 

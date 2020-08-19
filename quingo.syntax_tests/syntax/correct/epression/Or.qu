@@ -1,0 +1,19 @@
+/*
+ * function: test type of expression or
+ * structure: Expression || Expression
+ * type: correct type
+ * testpoint: type of "or" must be bool
+ */
+
+
+operation syntax_or_test(): bool{
+	bool result;
+	
+	bool a;
+	bool b;
+	
+	result = a || b;
+	
+	return result;
+	
+}

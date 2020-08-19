@@ -1,0 +1,12 @@
+import operations.*
+
+operation main(): unit
+{
+	using (q: qubit) {
+		H(q);
+		if (measure(q)) {
+			return;
+		}
+		H(q);
+	}
+}

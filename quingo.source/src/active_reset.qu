@@ -1,0 +1,27 @@
+import config.json.*
+import operations.*
+
+operation reset_to_zero(q: qubit) : unit {
+    bool a;
+    a = measure(q);
+    if (a) {
+        X180(q);
+    }
+}
+
+operation active_reset(v: bool):bool {
+    bool a;
+    a = false;
+
+    using(q: qubit) {
+        reset_to_zero(q);
+
+        if (v) {
+            X180(q);
+        }
+
+        a = measure(q);
+    }
+
+    return a;
+}

@@ -1,0 +1,25 @@
+import config.jason.*
+import operations.*
+
+operation test_and(): (bool, bool, bool, bool, (bool, bool))
+{
+	bool result1 = true && true;
+
+	bool result2 = true && false;
+
+	bool result3 = false && true;
+
+	bool result4 = false && false;
+
+	bool a;
+	bool result5;
+
+	using (q:qubit) {
+		init(q);
+		H(q);
+		a = measure(q);
+		result5 = true && a;
+	}
+
+	return (result1, result2, result3,result4, (a, result5));
+} 

@@ -1,0 +1,15 @@
+bin/
+build/
+model/
+__pycache__/
+src-gen/
+xsemantics-gen/
+test-bin/
+xtend-gen/
+target/
+*.eqasm
+*.jar
+/.metadata/
+*.xml_gen
+*.ps1
+~$*

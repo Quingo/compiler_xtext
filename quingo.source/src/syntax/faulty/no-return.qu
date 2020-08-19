@@ -1,0 +1,9 @@
+operation fun(): int
+{
+	if (true) {
+		
+	}
+	else {
+		//return 1;
+	}
+}

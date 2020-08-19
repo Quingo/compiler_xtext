@@ -1,0 +1,17 @@
+operation dummy(): unit
+{
+	using(q: qubit) {
+		X180(q);
+		measure(q);
+	}
+}
+
+operation main(): unit
+{
+	using(q: qubit) {
+		init(q);
+	t1: H(q);
+	@t1=10: H(q);
+	@t1=20: H(q);
+	}
+}

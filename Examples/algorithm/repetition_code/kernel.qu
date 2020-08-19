@@ -1,0 +1,35 @@
+import config.json.*
+import operations.*
+import util.*
+
+operation syndrome(d1:qubit, d2:qubit, d3:qubit, a1:qubit, a2:qubit) : unit {
+    CNOT(d1, a1);
+    CNOT(d2, a1);
+    CNOT(d2, a2);
+    CNOT(d3, a2);
+}
+
+operation repetitionCode() : bool[] {
+    bool[2] syn;
+    bool[3] output;
+    using((q, a) : (qubit[3], qubit[2])) {
+        init_all(q);
+        init_all(a);
+        X(q[0]);
+        syndrome(q[0], q[1], q[2], a[0], a[1]);
+        syn = meas_all(a);
+        if(syn[0] && syn[1]) {
+            X(q[1]);
+        }
+        if (syn[0] && !syn[1]) {
+            X(q[0]);
+        }
+        if (!syn[0] && syn[1]) {
+            X(q[2]);
+        }
+        
+        output = meas_all(q);
+    }
+       
+    return output;
+}

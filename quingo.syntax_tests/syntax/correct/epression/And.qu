@@ -1,0 +1,19 @@
+/*
+ * function: test type of expression And
+ * structure: Expression && Expression
+ * type: correct type
+ * testpoint: type of "And" must be bool
+ */
+
+
+operation syntax_and_test(): bool{
+	bool result;
+	
+	bool a;
+	bool b;
+	
+	result = a && b;
+	
+	return result;
+	
+}

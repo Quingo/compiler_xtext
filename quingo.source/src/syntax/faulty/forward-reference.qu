@@ -1,0 +1,6 @@
+operation main(): unit
+{
+	int a;
+	a = 2 + b;
+	int b;
+}

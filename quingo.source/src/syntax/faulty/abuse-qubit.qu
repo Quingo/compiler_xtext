@@ -1,0 +1,7 @@
+operation main(): (qubit, int)
+{
+	qubit a;
+	using ((q1,q2): (qubit, qubit)) {
+		q1 = q2;
+	}
+}

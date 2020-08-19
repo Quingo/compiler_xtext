@@ -1,0 +1,16 @@
+operation main(): unit
+{
+	using(q: int) {
+	}
+	using(q: (qubit, qubit)) {
+		
+	}
+	using(q, q2: (qubit, qubit)) {
+		
+	}
+	using((q1, q2): (int, qubit)) {
+		
+	}
+	using((q1, q2): qubit) {
+	}
+}

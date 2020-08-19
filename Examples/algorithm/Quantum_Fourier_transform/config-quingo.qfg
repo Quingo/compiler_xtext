@@ -1,0 +1,105 @@
+package  config.json
+
+
+{
+    "I": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [1.0,0.0], [1.0,0.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "QNOP"
+    },
+    "Zm45": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [1.0,0.0], [1.0,0.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "Zm45"
+    },
+    "Z45": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [1.0,0.0], [1.0,0.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "z45"
+    },
+    "Zm22_5": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [1.0,0.0], [1.0,0.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "zm22_5"
+    },
+    "Z22_5": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [1.0,0.0], [1.0,0.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "z22_5"
+    },
+    "Zm11_25": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [1.0,0.0], [1.0,0.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "zm11_25"
+    },
+    "Z11_25": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [1.0,0.0], [1.0,0.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "z11_25"
+    },
+    "X": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [1.0,0.0], [1.0,0.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "rx180"
+    },
+    "Y": {
+        "duration": 20,
+        "matrix": [ [0.0,0.0], [0.0,-1.0], [0.0,1.0], [0.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "ry180"
+    },
+    "Z": {
+        "duration": 20,
+        "matrix": [ [1.0,0.0], [0.0,0.0], [0.0,0.0], [-1.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "rz180"
+    },
+    "T": {
+        "duration": 20,
+        "matrix": [ [1.0,0.0], [0.0,0.0], [0.0,0.0], [-1.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "t"
+    },
+    "Tdag": {
+        "duration": 20,
+        "matrix": [ [1.0,0.0], [0.0,0.0], [0.0,0.0], [-1.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "tdag"
+    },
+    "S": {
+        "duration": 20,
+        "matrix": [ [1.0,0.0], [0.0,0.0], [0.0,0.0], [-1.0,0.0] ],
+        "type": "single-qubit",
+        "eqasm": "S"
+    },
+	"H": {
+		"duration": 40,
+		"matrix": [[1.0,0.0], [1.0,0.0], [1.0,0.0], [-1.0,0.0]] ,
+		"type": "single-qubit",
+		"eqasm": "H"
+	},
+	"CZ": {
+		"duration": 40,
+		"matrix": [
+			[1.0,0.0], [0.0,0.0], [0.0,0.0], [0.0,0.0],
+			[0.0,0.0], [1.0,0.0], [0.0,0.0], [0.0,0.0],
+			[0.0,0.0], [0.0,0.0], [1.0,0.0], [0.0,0.0],
+			[0.0,0.0], [0.0,0.0], [0.0,0.0], [-1.0,0.0]
+		],
+		"type": "two-qubit",
+		"eqasm": "CZ"
+	},
+	"measure": {
+		"duration": 600,
+		"type":"meas",
+		"eqasm":"measure"
+	}
+}

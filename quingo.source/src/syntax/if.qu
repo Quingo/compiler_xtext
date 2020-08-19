@@ -1,0 +1,60 @@
+import config.jason.*
+import operations.*
+
+operation dummy(): unit
+{
+	using(q: qubit) {
+		X180(q);
+	}
+}
+
+operation main(): (bool, int, int, int)
+{
+	bool a;
+	int b;
+	int c;
+	int g = 2;
+	
+  	/*int[1][2][3] array;
+  	array = {{{1}},{{2}},{{3,4}}};
+  	//int[][][] M;
+  	array = M;
+  	array[e][f][g]=3; 
+  	//array[2]={4};
+  	array[1][2]= {1,2,3};
+  	//array[1]= {{1},{2},{3},4};
+
+  	//c = array[e][f][g]+3;
+	//c =array[1].length;
+	//e = array.length;
+	//d = (1 <= c, false);
+	(bool, bool)[3][2] h;
+	a = 8 == 8 + c / f;
+	a = true && false;*/
+	//if (a || b && (a || c)) {if (true) {a=b;}} else {b = a;}
+	
+	using (q:qubit) {
+		init(q);
+		H(q);
+		a = measure(q);
+		if (a) {
+			g = 1;
+		}
+	}
+
+	if (true) {
+		b = 1;
+	}
+	else {
+		b = 2;
+	}
+
+	if (false) {
+		c = 1;
+	}
+	else {
+		c = 2;
+	}
+
+	return (a, b, c, g);
+} 

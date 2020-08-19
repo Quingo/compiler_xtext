@@ -1,0 +1,22 @@
+import operations.*
+
+operation main(): unit
+{
+	int a;
+	a = 4;
+	int b;
+	int g;
+	g = 2;
+	using (q: qubit) {
+		if (measure(q)) {
+			g = 5;
+		}
+	}
+	switch (g) {
+		case 8:
+		case 2: {
+			b = a;
+			break;
+		}
+	}
+}

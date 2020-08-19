@@ -1,0 +1,21 @@
+/*
+ * function: test type of expression ExpArray
+ * structure: {Expression*}
+ * type: faulty type
+ * testpoint: type of ExpArray is array
+ */
+ 
+ operation syntax_exparray_test(): unit{
+	int[] a;
+	double[][] b;
+	int[][] c;
+	
+	a ={1,{1},3};
+	
+	a = {1, true, 2};
+	
+	b = 1.2;
+	
+	c = {a[0],a[1]};		
+}
+

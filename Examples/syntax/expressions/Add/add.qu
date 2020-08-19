@@ -1,0 +1,15 @@
+import config.jason.*
+import operations.*
+
+operation test_add(): (int, double, int, double)
+{
+	int result1 = 10 + 10;
+
+	double result2 = 10.0 + 9.9999;
+
+	int result3 = 10 - 10;
+
+	double result4 = 10.0 - 9.9999;
+
+	return (result1, result2, result3,result4);
+} 

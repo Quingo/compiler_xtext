@@ -1,0 +1,84 @@
+import config.json.*
+import operations.*
+
+
+operation qft(): bool[] {
+    bool[4] output;
+    using(q : qubit[4]) {
+        init_all(q);
+        X(q[0]);
+        X(q[2]);
+        H(q[0]);
+        Z45(q[1]);
+        CNOT(q[1], q[0]);
+        Zm45(q[0]);
+        CNOT(q[1], q[0]);
+        Z45(q[0]);
+        H(q[1]);
+        Z22_5(q[2]);
+        CNOT(q[2], q[0]);
+        Zm22_5(q[0]);
+        CNOT(q[2], q[0]);
+        Z22_5(q[0]);
+        Z45(q[2]);
+        CNOT(q[2], q[1]);
+        Zm45(q[1]);
+        CNOT(q[2], q[1]);
+        Z45(q[1]);
+        H(q[2]);
+        Z11_25(q[3]);
+        CNOT(q[3], q[0]);
+        Zm11_25(q[0]);
+        CNOT(q[3], q[0]);
+        Z11_25(q[0]);
+        Z22_5(q[3]);
+        CNOT(q[3], q[1]);
+        Zm22_5(q[1]);
+        CNOT(q[3], q[1]);
+        Z22_5(q[1]);
+        Z45(q[3]);
+        CNOT(q[3], q[2]);
+        Zm45(q[2]);
+        CNOT(q[3], q[2]);
+        Z45(q[2]);
+        H(q[3]);
+        output = meas_all(q);
+    }
+    return output;
+}
+operation apply_all(gate: qubit -> unit, qubits: qubit[]) : unit {
+	int i;
+	i = 0;
+	int num_qubits;
+	num_qubits = qubits.length;
+	while (i < num_qubits) {
+		gate(qubits[i]);
+		i = i + 1;
+	}
+}
+ 
+operation meas_all(qubits: qubit[]) : bool[] {
+	int num_qubits;
+	num_qubits = qubits.length;
+
+	bool[num_qubits] res;
+	int i;
+	i = 0;
+	while (i < num_qubits) {
+		res[i] = measure(qubits[i]);
+		i = i + 1;
+	}
+	return res;
+}
+
+operation init_all(target: qubit[]) : unit {
+	apply_all(init, target);
+}
+
+operation init(q: qubit) : unit {
+    bool a;
+    a = measure(q);
+    if (a) {
+        X(q);
+    }
+}
