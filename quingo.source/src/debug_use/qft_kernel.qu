@@ -1,0 +1,40 @@
+operation dummy(): unit
+{
+	using(q: qubit) {
+		measure(q);
+	}
+}
+
+operation cu1(lambda: double, a: qubit, b: qubit): unit {
+    U1(a, lambda/toDouble(2));
+    CZ(a, b);
+    U1(b, -lambda/toDouble(2));
+    CZ(a, b);
+    U1(b, lambda/toDouble(2));
+}
+
+operation qft(number: int, q: qubit[]): unit {
+    for (int i = 0; i<number; i += 1) {
+        for (int j = i; j > 0; j -= 1) {
+            cu1(3.14/toDouble(2 * j), q[i], q[i - j]);
+        }
+        H(q[i]);
+    }
+}
+
+operation qft12(): bool[12] {
+    bool[12] output;
+    using(q : qubit[12]) {
+        init_all(q);
+        X(q[0], 180.0);
+        X(q[2], 180.0);
+        qft(2, q);
+        output = meas_all(q);
+    }
+    return output;
+}
+
+
+operation main():unit{
+	 qft12();
+}

@@ -1,0 +1,42 @@
+import config.json.*
+import operations.*
+
+operation bellStateLoop(): int {
+
+    bool[2] bArr;
+    using(q: qubit[2]){
+        init_all(q);
+        H(q[0]);
+        CNOT(q[0],q[1]);
+        bArr = meas_all(q);
+    }
+
+    int bit0, bit1;
+    switch (bArr[0]) {
+        case true: {bit0 = 1;}
+        case false: {bit0 = 0;}
+    }
+    if (bArr[1] == true) {
+        bit1 = 1;
+    } else {
+        bit1 = 0;
+    }
+
+    int res;
+    if (bArr[0] == bArr[1]) {
+        res =  10;
+    }
+
+    bArr[5] = true;
+
+    res = bit0 + bit1 * 2;
+    return res;
+}
+
+operation main(): int {
+
+int var0_int;
+var0_int = 1000;
+
+return bellStateLoop();
+}

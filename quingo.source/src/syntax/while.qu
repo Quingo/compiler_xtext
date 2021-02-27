@@ -25,7 +25,7 @@ operation main(): (int[], bool[], int[])
 		}
 	}
 	return (a, b, c);
-	using((q, qa): (qubit, qubit[3])) {
+	using(q:qubit, qa:qubit[3]) {
 		int i = 0;
 		while (i < 3) {
 			H(qa[i]);

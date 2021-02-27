@@ -7,24 +7,24 @@ import "http://www.eclipse.org/emf/2002/Ecore" as ecore
 Program:
     ('package' name=QualifiedName)?
      (elements+=AbstractElement)*;
- 
+
 AbstractElement:
      fun=FunDeclaration | Import | qconfig=QConfig | Include;
- 
+
 QualifiedName:
     ID ('.' ID)*;
- 
+
 Import:
     'import' importedNamespace=QualifiedNameWithWildcard;
 
 Include:
 	'include' file=STRING;
-  
+
 QualifiedNameWithWildcard:
     QualifiedName '.*'?;
 
 FunDeclaration:
-	(f?="function" | o?="operation" | p?="opaque") name=ID 
+	(f?="function" | o?="operation" | p?="opaque") name=ID
 	"(" ( pars+=FormalParameter ( "," pars+=FormalParameter )* )? ")"
 	 ":" type=Type  ( block=BlockStatement | ";" );
 
@@ -33,7 +33,7 @@ FormalParameter:
 
 Type:
 	FunctionType;
-	
+
 FunctionType returns Type:
 	ArrayType ({FunctionType.left=current} "->" right=ArrayType)* ;
 
@@ -58,18 +58,18 @@ StatementNoColon:
 	Assignment | OpAssignment | FunctionCall;
 
 ForStatement:
-	"for" "(" init=ForInitStatment cond=Expression ";" inc=StatementNoColon? ")"
-	block=BlockStatement;
-	 
+	"for" "(" initExpression=ForInitStatment condExpression=Expression ";" loopExpression=StatementNoColon? ")"
+	loopBody=BlockStatement;
+
 LocalVarDecl:
 	type=Type init+=VariableInit ("," init+=VariableInit)* ";";
-	
+
 VariableInit:
 	varName=VariableName ("=" value=Expression)?;
 
 VariableName:
 	name=ID;
-	
+
 Variable:
 	FormalParameter | FunDeclaration | VariableName;
 
@@ -77,11 +77,11 @@ Assignment:
 	left=LeftHandSide "=" value=Expression;
 
 LeftHandSide:
-	ArrayAccess | ExpTuple; 
+	ArrayAccess | ExpTuple;
 
-FunctionCall:	
-	fun=[Variable] "(" ( pars+=Expression ( "," pars+=Expression )* )? ")";
-	
+FunctionCall:
+	exp=ExpFunctionCall;
+
 IfStatement:
 	"if" "(" expression=Expression ")" ifStat=BlockStatement (=> 'else'  elseStat=BlockStatement)?;
 
@@ -92,33 +92,33 @@ WaitStatement:
 	"wait" "("lis+=Expression ("," lis+=Expression)+ ")" ";";
 
 BlockStatement:
-	{BlockStatement} "{" (stats += Statement)* "}";	
+	{BlockStatement} "{" (stats += Statement)* "}";
 
 WhileStatement:
-	"while" "(" expression=Expression ")" whilestat = BlockStatement;
-	
+	"while" "(" condExpression=Expression ")" whileBody = BlockStatement;
+
 SwitchStatement:
-	"switch" "(" expression=Expression ")" "{" block+=SwitchBlock* (def=DefaultBlock)? "}";
+	"switch" "(" expSwitchValue=Expression ")" "{" switchBody+=SwitchBlock* (defaultBlock=DefaultBlock)? "}";
 
 SwitchBlock :
-	{SwitchBlock} "case" exp=Expression ":" (sblock=BlockStatement)? ;
+	{SwitchBlock} "case" expCaseValue=Expression ":" (caseActionStats=BlockStatement)? ;
 
 DefaultBlock :
-	{DefaultBlock} "default" ":" (sblock=BlockStatement)? ;
+	{DefaultBlock} "default" ":" (caseActionStats=BlockStatement)? ;
 
 BreakStatement:
 	{BreakStatement} "break" ";";
-	
+
 ContinueStatement:
 	{ContinueStatement} "continue" ";";
-	
+
 EmptyStatement:
 	{EmptyStatement} ";";
-	
+
 UsingStatement:
-	"using" "(" (left?="(")? qvar+=VariableName ("," qvar+=VariableName)* (right?=")")? ":" type=Type ")"
+	"using" "(" pars+=FormalParameter ( "," pars+=FormalParameter )* ")"
 	 block=BlockStatement;
-	
+
 OpAssignment:
 	left=LeftHandSide op=ASSIGNMENT_OP right=Expression;
 
@@ -127,52 +127,52 @@ TimerDeclaration:
 
 TimingConstraint:
 	'@' timer=[TimerDeclaration] '=' value=Expression ':';
-	
+
 Expression :
 	Or;
 
-Or returns Expression: 
+Or returns Expression:
 	And ({Or.left=current} "||" right=And)*;
 
-And returns Expression: 
+And returns Expression:
 	Equal ({And.left=current} "&&" right=Equal)*;
-	
-Equal returns Expression: 
+
+Equal returns Expression:
 	NEqual ({Equal.left=current} op=EQUAL_OP right=NEqual)*;
-	
+
 NEqual returns Expression:
 	Add ({NEqual.left=current} op=NEQUAL_OP right=Add)*;
-	
+
 Add returns Expression:
 	Mult ({Add.left=current} op=ADD_OP right=Mult)*;
-	
+
 Mult returns Expression:
 	Unary ({Mult.left=current} op=MULT_OP right=Unary)*;
-	
+
 Unary returns Expression:
 	Primary | {Unary} op=UNARY_OP final=Unary;
 
-Primary returns Expression: 
+Primary returns Expression:
 	ArrayAccess | BooleanLiteral | IntLiteral | DoubleLiteral | ExpFunctionCall | ExpTuple | ExpArray | ToInt | ToDouble;
 
 ArrayAccess returns Expression:
-	{ExpVariable} value=[Variable] ({ArrayAccess.array=current} "[" dim=Expression "]")*({ExpLength.left=current} ".length")?;
+	{ExpVariable} value=[Variable] ({ArrayAccess.array=current} "[" dim=Expression "]")* ({ExpLength.left=current} ".length")?;
 
 BooleanLiteral returns Expression:
 	{BooleanLiteral} ('false' | isTrue?='true');
 
 IntLiteral returns Expression:
 	{IntLiteral} value=INT;
-	
+
 DoubleLiteral returns Expression:
 	{DoubleLiteral} value=DOUBLE;
-	
+
 ExpFunctionCall returns Expression:
 	{ExpFunctionCall} fun=[Variable] "(" ( pars+=Expression ( "," pars+=Expression )* )? ")";
-	
+
 ExpTuple returns Expression:
 	{ExpTuple} "(" texp+=Expression ("," texp+=Expression)* ")";
-	 
+
 ExpArray returns Expression:
 	{ExpArray} "{" exp+=Expression ("," exp+=Expression )* "}";
 
@@ -184,10 +184,10 @@ ToDouble returns Expression:
 
 terminal ASSIGNMENT_OP:
 	"+=" | "-=" | "*=" | "/=" | "%=" ;
-	
+
 terminal EQUAL_OP:
 	"==" | "!=" ;
-	
+
 terminal NEQUAL_OP:
 	"<" | "<=" | ">=" | ">";
 
@@ -196,7 +196,7 @@ terminal MULT_OP:
 
 terminal ADD_OP:
  	"-" | "+" ;
- 
+
 UNARY_OP:
 	ADD_OP | "!";
 
@@ -204,7 +204,7 @@ QConfig :
 	"{"
 		opaque+=Opaque ("," opaque+=Opaque )*
 	"}";
-	
+
 Opaque:
 	name=STRING ":" "{"
 		field+=Field ("," field+=Field )*
@@ -215,9 +215,9 @@ Field:
 
 Jvalue:
 	opaque=Opaque | string=STRING | {Jvalue} inti=INT | {Jvalue} Jarray;
-    
+
 Jarray:
 	"[""[" (ADD_OP)?DOUBLE "," (ADD_OP)?DOUBLE "]"  (",""["(ADD_OP)?DOUBLE ","(ADD_OP)?DOUBLE  "]")* "]";
-    
+
 terminal DOUBLE returns ecore::EFloat:
         INT '.' INT;

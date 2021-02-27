@@ -20,7 +20,6 @@ import org.qdt.quingo.quingo.BooleanLiteral
 import org.qdt.quingo.quingo.IntLiteral
 import org.qdt.quingo.quingo.ExpFunctionCall
 import org.qdt.quingo.validation.AbstractQuingoValidator
-import org.qdt.quingo.quingo.FunctionCall
 import org.qdt.quingo.quingo.QubitType
 import org.qdt.quingo.quingo.TupleType
 import org.qdt.quingo.quingo.ExpTuple
@@ -107,7 +106,7 @@ auxiliary noQubitTypes(Type type) {
 }
 
 auxiliary noQubitBoolArrayTupleTypes(Type type) {
-	return !((type instanceof QubitType) || (type instanceof BoolType) || 
+	return !((type instanceof QubitType) || (type instanceof BoolType) ||
 		(type instanceof ArrayType) || (type instanceof TupleType)
 	)
 }
@@ -119,7 +118,7 @@ auxiliary checkFunctionCall(Variable fun, EList<Expression> pars) {
 			or
 				return "More parameters are needed"
 		}
-		
+
 		for (var int i=0; i<pars.length; i++) {
 		 	empty |- fun.pars.get(i) : var Type left
 		 	empty |= pars.get(i) : left
@@ -165,33 +164,12 @@ auxiliary checkFunctionCall(Variable fun, EList<Expression> pars) {
 
 axiom FunDeclarationType
 	G |- FunDeclaration variable : variable.type
- 
+
 axiom FormalParameterType
 	G |- FormalParameter variable : variable.type
 
-rule VariableType
-	G |- VariableName variable: Type type
-from {
-	var parent = variable.eContainer
-	if (parent instanceof UsingStatement) {
-		var ptype = parent.type
-		if (parent.left) {
-			var ttype = (ptype as TupleType).type
-			for (var i=0; i<parent.qvar.length; i++) {
-				if (parent.qvar.get(i) == variable) {
-					type = ttype.get(i)
-				}
-			}
-		}
-		else {
-			type = ptype
-		}
-	}
-	else {
-		var local = parent.eContainer as LocalVarDecl
-		type = local.type
-	}
-}
+axiom VariableType
+	G |- VariableName variable: (variable.eContainer.eContainer as LocalVarDecl).type
 
 axiom OrType
 	G ||- Or exp :> QuingoFactory::eINSTANCE.createBoolType
@@ -225,7 +203,7 @@ from {
 
 rule ArrayAccessType
 	G ||- ArrayAccess exp :> Type type
-from {	
+from {
 	G ||- exp.array :> var ArrayType otype
 	G |= otype.ptype :> type
 }
@@ -242,7 +220,7 @@ from {
 			G |- fun : var Type tright
 			G |= tright :> var Type cright
 			it.right = cright
-			
+
 			val pars = fun.pars
 			if (pars.length == 0) {
 				it.left = QuingoFactory::eINSTANCE.createUnitType
@@ -346,7 +324,7 @@ from {
 rule TupleTypeRelation
 	G ||- TupleType left : TupleType right
 from {
-	left.type.length === right.type.length	
+	left.type.length === right.type.length
 	for (var int i=0; i<left.type.length; i++){
 		var lefttype = left.type.get(i)
 		var righttype = right.type.get(i)
@@ -518,23 +496,23 @@ from {
 		fail
 		error "Only double or int type can multiply"
 	}
-	
+
 	if (exp.op == "%") {
 		empty ||- lefttype : QuingoFactory::eINSTANCE.createIntType
 		or
 			fail
 			error "Only int type can mudulo"
-			
+
 		empty ||- righttype : QuingoFactory::eINSTANCE.createIntType
 		or
 			fail
 			error "Only int type can mudulo"
 	}
-	else {	
+	else {
 		empty ||- lefttype : righttype
 		or
 			fail
-			error "The right side of " + exp.op + " does not match the left!"	
+			error "The right side of " + exp.op + " does not match the left!"
 	}
 }
 
@@ -548,7 +526,7 @@ from {
 			fail
 			error "Only bool type can uesd for NOT"
 	}
-	else {	
+	else {
 		if (!intdoubleTypes(type)) {
 			fail
 			error "Only double or int type can add"
@@ -573,16 +551,6 @@ from {
 		fail
 		error "Only arrays can have length"
 	}
-}
-
-checkrule FunCallCheck for
-	FunctionCall stat
-from {
-	var message = checkFunctionCall(stat.fun, stat.pars)
-	message == ""
-	or
-		fail
-		error message
 }
 
 checkrule ExpFunCall for
@@ -617,7 +585,7 @@ from {
  	}
 }
 
-checkrule FunDeclarationCheck for 
+checkrule FunDeclarationCheck for
 	FunDeclaration fun
  from {
  	empty |- fun : var Type left
@@ -649,16 +617,16 @@ checkrule FunDeclarationCheck for
 			fail
 			error "No return statement is found"
 	}
-	
+
 	if (fun.p && (fun.block !== null)) {
 		fail
 		error "opaque do not need block"
 	}
 }
-    
+
 checkrule OpAssignmentCheck for
  	OpAssignment stat
-from { 	
+from {
  	var exp = stat.left as Expression
  	empty ||- exp :> var Type left
 	noQubitBoolArrayTupleTypes(left)
@@ -701,7 +669,7 @@ from {
  	or
  		fail
  		error "Local variable type cannot contain qubit type"
- 	
+
  	for (init: variable.init) {
 	 	if (init.value !== null) {
 	 		var exp = init.value
@@ -722,7 +690,7 @@ from {
 			empty |= expression.exp.get(i) : type
 			or
 				fail
-				error "The element types in the ExpArray do not conform"	
+				error "The element types in the ExpArray do not conform"
 		}
 	}
 }
@@ -748,33 +716,14 @@ from {
 }
 
 checkrule UsingStatCheck for
-	UsingStatement usingstatement
+	UsingStatement stat
 from {
-	if (usingstatement.qvar.length == 1) {
-		isQubitTypes(usingstatement.type)
+	for (par: stat.pars) {
+		isQubitTypes(par.type)
 		or
 			fail
-			error usingstatement.type.stringRep + " is not a qubit type"
+			error par.type.stringRep + " is not a qubit type"
 	}
-	else {
-		if (!(usingstatement.type instanceof TupleType)) {
-			fail
-			error "type and QubitVariable number not equal"
-		}
-		
-		var tupletype = usingstatement.type as TupleType
-		usingstatement.qvar.length == tupletype.type.length
-		or
-			fail
-			error "type and QubitVariable number not equal"
-
-		for (ttype: tupletype.type) {
-			isQubitTypes(ttype)
-			or
-				fail
-				error ttype.stringRep + " is not a qubit type"
-		}
-	}	
 }
 
 checkrule WaitCheck for
@@ -799,7 +748,7 @@ from {
 			or
 				fail
 				error waitstatement.lis.get(i).stringRep + " is not a qubit"
-		}	
+		}
 	}
 	empty |= waitstatement.lis.get(length - 1) : QuingoFactory::eINSTANCE.createIntType
 	or
@@ -810,7 +759,7 @@ from {
 checkrule ForCheck for
 	ForStatement forstatement
 from {
-	empty |= forstatement.cond : QuingoFactory::eINSTANCE.createBoolType
+	empty |= forstatement.condExpression : QuingoFactory::eINSTANCE.createBoolType
 	or
 		fail
 		error "Condition has to be bool type in a FOR loop"
@@ -819,7 +768,7 @@ from {
 checkrule WhileCheck for
 	WhileStatement whilestatement
 from {
-	empty |= whilestatement.expression : QuingoFactory::eINSTANCE.createBoolType
+	empty |= whilestatement.condExpression : QuingoFactory::eINSTANCE.createBoolType
 	or
 		fail
 		error "Condition has to be bool type in a While loop"
@@ -837,13 +786,13 @@ from {
 checkrule SwitchCheck for
 	SwitchStatement switchstatement
 from {
-	empty ||- switchstatement.expression :> var Type switchtype
-	for(stat:switchstatement.block){
-		empty ||- stat.exp :> var Type casetype
+	empty ||- switchstatement.expSwitchValue :> var Type switchtype
+	for(stat:switchstatement.switchBody){
+		empty ||- stat.expCaseValue :> var Type casetype
 		empty ||- switchtype : casetype
 		or
 			fail
-			error "type of " + stat.exp.stringRep + " not fit with switch type"
+			error "type of " + stat.expCaseValue.stringRep + " not fit with switch type"
 	}
 }
 

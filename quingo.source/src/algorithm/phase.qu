@@ -1,0 +1,65 @@
+import config.jason.*
+import operations.*
+
+operation dummy(): unit
+{
+	using(q: qubit) {
+		measure(q);
+	}
+}
+
+operation cu1(lambda: double, a: qubit, b: qubit): unit {
+    U1(a, lambda/toDouble(2));
+    CZ(a, b);
+    U1(b, -lambda/toDouble(2));
+    CZ(a, b);
+    U1(b, lambda/toDouble(2));
+}
+
+operation phase(fisrt_q_num:int, second_q_num:int, q_1:qubit[],q_2:qubit):unit{
+    int i = 0;
+    double angel;
+    while (i < fisrt_q_num){
+        H(q_1[i]);
+        i += 1;
+    }
+    angel = 180.0 / 4.0; 
+    int repetitions = 1;
+    for (i=0; i < fisrt_q_num; i+=1){
+        for(int j=0; j < repetitions;j+=1){
+            for(int k=0; k < second_q_num; k+=1){
+                cu1(angel,q_1[i],q_2);
+            }
+        }
+        repetitions *= 2;
+    }
+}
+
+operation qft(number: int, q: qubit[]): unit {
+
+    for (int i = 0; i<number; i += 1) {
+        for (int j = i; j > 0; j -= 1) {
+
+            cu1(3.14/toDouble(2 * j), q[i], q[i - j]);
+        }
+
+        H(q[i]);
+    }
+}
+
+operation phase4():bool[3] {
+    bool[3] rst;
+    using(q1: qubit[3], q2: qubit){
+        init_all(q1);
+        init(q2);
+        X(q2, 180.0);
+        phase(3, 1, q1, q2);
+        qft(3,q1);
+        rst = meas_all(q1);
+    }
+    return rst;
+}
+
+operation main(): bool[] {
+	return phase4();
+}

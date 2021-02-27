@@ -44,7 +44,7 @@ class QuingoScopeProvider extends AbstractQuingoScopeProvider {
 			return Scopes.scopeFor(list, scopeForVariable(container, reference))
 		}
 		else if (container instanceof ForStatement) {
-			var forInit = container.init
+			var forInit = container.initExpression
 			if (forInit instanceof LocalVarDecl) {
 				var list = new ArrayList<VariableName>
 				for (init: forInit.init) {
@@ -57,7 +57,7 @@ class QuingoScopeProvider extends AbstractQuingoScopeProvider {
 			}
 		}
 		else if (container instanceof UsingStatement) {
-			return Scopes.scopeFor(container.qvar, scopeForVariable(container, reference))
+			return Scopes.scopeFor(container.pars, scopeForVariable(container, reference))
 		}
 		else if (container instanceof FunDeclaration) {
 			return Scopes.scopeFor(container.pars, scopeForVariable(container, reference))

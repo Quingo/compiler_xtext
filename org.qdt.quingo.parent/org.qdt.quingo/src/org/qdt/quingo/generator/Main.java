@@ -9,6 +9,7 @@ import com.google.inject.Provider;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.resource.Resource;
@@ -26,7 +27,8 @@ import org.qdt.quingo.quingo.FunDeclaration;
 import org.qdt.quingo.quingo.Program;
 
 public class Main {
-	
+	public static Boolean debugMode = false;
+
 	static void printUsage() {
 		System.out.println("Usage: java -jar quingo.jar <Quingo_files> <configuration_file> [options]");
 		System.out.println("Options: ");
@@ -46,9 +48,41 @@ public class Main {
 			return;
 		}
 		
+//		debugMode = false;
+
+		List<String> custom_args = Arrays.asList("D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\kernel.qu",
+			"D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\config.qfg",
+			"D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\standard_operations.qu",
+			"-o", "D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\build\\debug.eqasm",
+			"-s", "0",
+			"-t", "65536",
+			"-d", "131072",
+			"-u", "100");
+
+		List<String> mainFileList = Arrays.asList("2d_array.qu");
+//		List<String> mainFileList = Arrays.asList("add.qu", "bell.qu", "qft_kernel.qu", "qrng_kernel.qu", "rb_kernel.qu", "switch_toInt.qu");
+
+		String dirDebugUse = "D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\";
+
+//		ArrayList<String> trueArgs = new ArrayList<String>();
+
+
 		Injector injector = new QuingoStandaloneSetup().createInjectorAndDoEMFRegistration();
 		Main main = injector.getInstance(Main.class);
-		int ret = main.runGenerator(args);
+		int ret = 0;
+		if (debugMode) {
+			for (String kernel_fn : mainFileList) {
+				String filename = dirDebugUse + kernel_fn;
+				custom_args.set(0, filename);
+				System.out.println("Testing the file: " + filename);
+				ret = main.runGenerator(custom_args.toArray(new String[0]));
+			}
+
+		} else {
+
+			ret = main.runGenerator(args);
+		}
+
 		if (ret != 0) {
 			System.exit(ret);
 		}
@@ -63,7 +97,7 @@ public class Main {
 	@Inject
 	private GeneratorDelegate generator;
 
-	@Inject 
+	@Inject
 	private JavaIoFileSystemAccess fileAccess;
 
 	protected int runGenerator(String[] string) {
@@ -82,7 +116,7 @@ public class Main {
 			case "-v":
 			case "-V":
 			case "--version":
-				System.out.println("Quingo compiler v0.1.10");
+				System.out.println("Quingo compiler v0.2.0.2");
 				return 0;
 			case "-o":
 			case "-O":
@@ -104,7 +138,7 @@ public class Main {
 					Configuration.sharedAddr = Integer.parseInt(string[i]);
 				}
 				catch (Exception e) {
-					System.err.println(e);
+					e.printStackTrace();
 					return -5;
 				}
 				break;
@@ -119,7 +153,7 @@ public class Main {
 					Configuration.staticAddr = Integer.parseInt(string[i]);
 				}
 				catch (Exception e) {
-					System.err.println(e);
+					e.printStackTrace();
 					return -5;
 				}
 				break;
@@ -134,7 +168,7 @@ public class Main {
 					Configuration.dynamicAddr = Integer.parseInt(string[i]);
 				}
 				catch (Exception e) {
-					System.err.println(e);
+					e.printStackTrace();
 					return -5;
 				}
 				break;
@@ -149,7 +183,7 @@ public class Main {
 					Configuration.maxUnrolling = Integer.parseInt(string[i]);
 				}
 				catch (Exception e) {
-					System.err.println(e);
+					e.printStackTrace();
 					return -5;
 				}
 				break;
@@ -165,14 +199,14 @@ public class Main {
 				if (mainRes == null) {
 					mainf = string[i];
 					mainRes = set.getResource(URI.createFileURI(mainf), true);
+
 			        all_resources.add(mainRes);
-				}
-				else if (string[i].compareTo(mainf) != 0) {
+				} else if (string[i].compareTo(mainf) != 0) {
 			        Resource resource = set.getResource(URI.createFileURI(string[i]), true);
 			        all_resources.add(resource);
 		    	}
 			}
-		}	
+		}
 
 		/*for (int i=0; i<all_resources.size(); ++i) {
 			Program prog = (Program)all_resources.get(i).getContents().get(0);
@@ -235,7 +269,7 @@ public class Main {
 			generator.doGenerate(all_resources.get(0), fileAccess, context);
 		}
 		catch (Exception e) {
-			System.err.println(e);
+			e.printStackTrace();
 			return -4;
 		}
 

@@ -1,0 +1,35 @@
+operation test_array_write(): int[][] {
+	int OUT_SIZE = 199;
+
+	int[1][] res;
+
+    int[OUT_SIZE] inner_res;
+    for (int j = 0; j < OUT_SIZE; j += 1) {
+        inner_res[j] = j;
+    }
+
+    res[0] = inner_res;
+
+	return res;
+
+}
+
+
+operation main(): int {
+    int[][] result;
+    result = test_array_write();
+    return 3;
+
+	// int OUT_SIZE = 1990;
+
+	// int[1][] res;
+
+    // int[OUT_SIZE] inner_res;
+    // for (int j = 0; j < OUT_SIZE; j += 1) {
+    //     inner_res[j] = j;
+    // }
+
+    // res[0] = inner_res;
+
+	// return res;
+}

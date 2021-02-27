@@ -3,9 +3,14 @@
  */
 package org.qdt.quingo.generator
 
+import com.google.inject.Inject
+import eqasm.FPR
+import eqasm.GPR
+import eqasm.QubitPair
 import java.io.IOException
 import java.util.ArrayList
 import java.util.HashMap
+import java.util.HashSet
 import org.eclipse.emf.common.util.EList
 import org.eclipse.emf.common.util.URI
 import org.eclipse.emf.ecore.EObject
@@ -14,2015 +19,2895 @@ import org.eclipse.emf.ecore.util.EcoreUtil
 import org.eclipse.xtext.generator.AbstractGenerator
 import org.eclipse.xtext.generator.IFileSystemAccess2
 import org.eclipse.xtext.generator.IGeneratorContext
-import org.eclipse.xtext.nodemodel.util.NodeModelUtils
-import org.qdt.quingo.quingo.Add
-import org.qdt.quingo.quingo.And
-import org.qdt.quingo.quingo.ArrayAccess
-import org.qdt.quingo.quingo.ArrayType
-import org.qdt.quingo.quingo.BlockStatement
-import org.qdt.quingo.quingo.BoolType
-import org.qdt.quingo.quingo.BooleanLiteral
-import org.qdt.quingo.quingo.BreakStatement
-import org.qdt.quingo.quingo.ContinueStatement
-import org.qdt.quingo.quingo.Equal
-import org.qdt.quingo.quingo.ExpArray
-import org.qdt.quingo.quingo.ExpFunctionCall
-import org.qdt.quingo.quingo.ExpLength
-import org.qdt.quingo.quingo.ExpTuple
-import org.qdt.quingo.quingo.ExpVariable
-import org.qdt.quingo.quingo.Expression
-import org.qdt.quingo.quingo.FormalParameter
-import org.qdt.quingo.quingo.FunDeclaration
-import org.qdt.quingo.quingo.FunctionCall
-import org.qdt.quingo.quingo.FunctionType
-import org.qdt.quingo.quingo.IfStatement
-import org.qdt.quingo.quingo.IntLiteral
-import org.qdt.quingo.quingo.IntType
-import org.qdt.quingo.quingo.Mult
-import org.qdt.quingo.quingo.NEqual
-import org.qdt.quingo.quingo.Or
-import org.qdt.quingo.quingo.Program
-import org.qdt.quingo.quingo.QubitType
-import org.qdt.quingo.quingo.QuingoFactory
-import org.qdt.quingo.quingo.ReturnStatement
-import org.qdt.quingo.quingo.SwitchStatement
-import org.qdt.quingo.quingo.TupleType
-import org.qdt.quingo.quingo.Type
-import org.qdt.quingo.quingo.Unary
-import org.qdt.quingo.quingo.UnitType
-import org.qdt.quingo.quingo.UsingStatement
-import org.qdt.quingo.quingo.WaitStatement
-import org.qdt.quingo.quingo.WhileStatement
-import org.qdt.quingo.quingo.OpAssignment
-import org.qdt.quingo.quingo.LocalVarDecl
-import org.qdt.quingo.quingo.Assignment
-import org.qdt.quingo.quingo.EmptyStatement
-import org.qdt.quingo.quingo.DoubleLiteral
-import org.qdt.quingo.quingo.DoubleType
-import java.util.HashSet
-import org.qdt.quingo.quingo.Statement
-import org.qdt.quingo.quingo.ForStatement
-import org.qdt.quingo.quingo.VariableInit
-import org.qdt.quingo.quingo.Opaque
-import org.qdt.quingo.typing.QuingoSemantics
-import com.google.inject.Inject
 import org.eclipse.xtext.nodemodel.ICompositeNode
-import org.qdt.quingo.quingo.ToInt
-import org.qdt.quingo.quingo.ToDouble
-import org.qdt.quingo.quingo.TimerDeclaration
-import org.qdt.quingo.quingo.TimingConstraint
-import org.qdt.quingo.quingo.Variable
+import org.eclipse.xtext.nodemodel.util.NodeModelUtils
+import org.junit.jupiter.api.Assertions
+import org.qdt.quingo.quingo.*
+import org.qdt.quingo.typing.QuingoSemantics
+
+import static org.qdt.quingo.generator.Configuration.*
+import static org.qdt.quingo.generator.EqasmBackend.*
+import static org.qdt.quingo.generator.StringToReg.*
+
+import static extension org.qdt.quingo.generator.Serializer.*
+import org.qdt.quingo.quingo.Statement
+import java.util.ListIterator
+import org.eclipse.emf.ecore.resource.ResourceSet
 
 /**
  * Generates code from your model files on save.
- * 
+ *
  * See https://www.eclipse.org/Xtext/documentation/303_runtime_concepts.html#code-generation
  */
 class QuingoGenerator extends AbstractGenerator {
-	
-	// sizes of primitive data types in bytes
-	val BOOL_SIZE = 1
-	val INT_SIZE = 4
-	val POINTER_SIZE = 4
-	val DOUBLE_SIZE = 4
-	
-	// global variables
-	int sIndex // the first unused S register
-	int iIndex // the first unused R register
-	int fIndex // the first unused F register
-	String duration // the duration of current quantum operation
-	
-	int ifIndex		// used for the generated labels related to IF structures
-	int whileIndex	// used for the generated labels related to WHILE and FOR structures
-	int switchIndex // used for the generated labels related to SWITCH structures
-	int arrayIndex	// used for the generated labels related to array allocation
-	int funIndex	// used for the generated labels related to function calls
-	
-	HashMap<String, Opaque> config		// opaque gates configuration
-	HashMap<EObject, Integer> indexMap	// match an AST node to its index
-	HashMap<String, MetaData> regToMeta	// record the MetaData that is stored in the registers
-	HashMap<TimerDeclaration, Integer> timerMap
+    // definition of constants
+    static val QuingoIntType    = QuingoFactory::eINSTANCE.createIntType
+    static val QuingoBoolType   = QuingoFactory::eINSTANCE.createBoolType
+    static val QuingoQubitType  = QuingoFactory::eINSTANCE.createQubitType
+    static val QuingoDoubleType = QuingoFactory::eINSTANCE.createDoubleType
 
-	int memoryAddr	// the beginning of memory space
-	String output	// buffer for the code generation
-	IFileSystemAccess2 fsaGlobal
-	String fileName
-	Boolean left	// specify whether the current expression is on the left side in an assignment statement
-	int global
-	
-	var vscode = false
-	
-	@Inject	QuingoSemantics xsemantics
+    // global variables
+    int sIndex // the first unused S register
+    int iIndex // the first unused R register
+    int fIndex // the first unused F register
+    int duration // the duration of current quantum operation
 
-	override void doGenerate(Resource resource, IFileSystemAccess2 fsa, IGeneratorContext context) {
+    int ifIndex		// used for the generated labels related to IF structures
+    int whileIndex	// used for the generated labels related to WHILE and FOR structures
+    int switchIndex // used for the generated labels related to SWITCH structures
+    int arrayIndex	// used for the generated labels related to array allocation
+    int funIndex	// used for the generated labels related to function calls
+
+    HashMap<String, Opaque> config		// opaque gates configuration
+    HashMap<EObject, Integer> mapAstNodeToIndex	// match an AST node to its index
+    HashMap<WhileStatement, HashSet<String>> mapWhileToVarSet // record the variables assigned in a loop body
+    HashMap<String, MetaData> mapRegToMetadata	// record the MetaData that is stored in the registers
+    HashMap<TimerDeclaration, Integer> timerMap
+
+    int memoryAddr	                    // the starting address of the free memory space
+    IFileSystemAccess2 fsaGlobal
+    String fileName
+    Boolean bExprOnLeftSide  // specify whether the current expression is on the left side in an assignment statement
+    int global
+
+    var vscode = false
+
+
+
+    @Inject	QuingoSemantics xsemantics
+
+    override void doGenerate(Resource resource, IFileSystemAccess2 fsa, IGeneratorContext context) {
+
+        // Global variable initialization
+        sIndex = 0
+        iIndex = 3 // r0 for false, r1 for true, r2 for freeAddr
+        fIndex = 1 // f0 for 0.0
+        duration = 1
+
+        ifIndex = 0
+        whileIndex = 1 // must be positive since its sign is used in compiling CONTINUE statements
+        arrayIndex = 0
+        switchIndex = 0
+        funIndex = 0
+
+        config            = new HashMap<String, Opaque>
+        mapAstNodeToIndex = new HashMap<EObject, Integer>
+        mapWhileToVarSet  = new HashMap<WhileStatement, HashSet<String>>
+        mapRegToMetadata  = new HashMap<String, MetaData>
+        timerMap          = new HashMap<TimerDeclaration, Integer>
+
+        memoryAddr = Configuration.staticAddr + Serializer.INT_SIZE // [Configuration.staticAddr] = 0
+        fsaGlobal = fsa
+        bExprOnLeftSide = false
+        global = 0
+
+        resetBackend()  // clear instructions previously
+        
+        // Optimize AST
+        var resourceSet = resource.resourceSet
+        resourceSet.decomposeForLoop
+
+        for (res : resourceSet.resources) {
+            if (res.URI.fileExtension == "qfg") {
+                var prog = res.contents.head as Program
+                for (opaque: prog?.eAllContents.toIterable.filter(Opaque)) {
+
+                    // Check whether the duration of measure is legal
+                    var measure = false
+                    var value = 0
+                    for (sec: opaque.field) {
+                        if (sec.name.equals("type") && sec.value.string == "meas") {
+                            measure = true
+                        }
+                        if (sec.name.equals("duration")) {
+                            value = sec.value.inti
+                        }
+                    }
+                    if (measure && value < 60) {
+                        System.err.println("Measure's duration is not allowed to be under 60!")
+                        Configuration.exitCode = -6
+                        return
+                    }
+
+                    config.put(opaque.name, opaque)
+                }
+            }
+        }
+
+        for (nodeFuncDecl : resource.allContents.toIterable.filter(FunDeclaration)) {
+
+            if (nodeFuncDecl.name.equals("main")) {
+
+                var index = funIndex++
+                mapAstNodeToIndex.put(nodeFuncDecl, index)
+                addInitInstructions()
+
+                if (vscode) {
+                    System.err.println("input: " + resource.URI);
+                    for (res : resourceSet.resources) {
+                        System.err.println("Resource set: " + res.URI);
+                    }
+                }
+
+                if (Configuration.outputFile != "") {
+                    fileName = Configuration.outputFile
+                }
+                else {
+                    fileName = "build/" + resource.URI.trimFileExtension.lastSegment + ".eqasm"
+                }
+                try {
+                    var map = new HashMap<String, MetaData>
+                    for (par: nodeFuncDecl.pars) {
+                        par.compile(map)
+                    }
+                    nodeFuncDecl.block?.compile(map)
+                }
+                catch (Exception e) {
+                    e.printStackTrace()
+                    System.err.println("Except happens at line number: " + e.getStackTrace.get(0).getLineNumber)
+
+                    Configuration.exitCode = -6
+                }
+
+                addEndInstructions()
+
+                writeInsnToFile()
+            }
+        }
+
+    }
+
+    /**
+     * Replace a number of old statements with a number of new statements within a statement group.
+     *
+     * @param statementGroup: the statement group which contains the old statements and shall be inserted
+     *                          with the new statements
+     * @param iPosition:      the starting position of the old statements in the statement group
+     * @param iNumofOld:      the number of old statements
+     * @param newStatements:  the new statements to insert.
+     */
+    def replaceStatementInGroup(EList<Statement> statementGroup,
+                                int iPosition, int iNumOfOld,  ArrayList<Statement> newStatements) {
+        for (var i = 0; i < iNumOfOld; i++) {
+            statementGroup.remove(iPosition)
+        }
+
+        newStatements.reverse.forEach[statementGroup.add(iPosition, it)]
+    }
+    
+    def updateStatement(ListIterator<Statement> iter, ArrayList<Statement> newStatements) {
+        iter.remove()
+
+        for(statement : newStatements) {
+            iter.add(statement)
+        }
+    }
+
+    /**
+     * Replace a ForStatement with an equivalent WhileStatement
+     *
+     * A ForStatement has the following structure:
+     * ```
+     *   "for" "(" initExpression=ForInitStatment condExpression=Expression ";" loopExpression=StatementNoColon? ")"
+     *     loopBody=BlockStatement;
+     * ```
+     *
+     * The decomposition will result in the following structure:
+     *    ForInitStatment
+     *    "while (" condExpression ") {"
+     *      loopBody.stats
+     *      loopExpression
+     *    "}"
+     */
+    def void decomposeForLoop(ResourceSet rs) {
+        for (res : rs.resources) {
+        	var prog = res.contents.head as Program
+        	for (element: prog?.elements) {
+        		element.fun?.block?.decomposeForLoop
+        	}
+        }
+    }
+    
+    def void decomposeForLoop(BlockStatement blockStatement) {
+    	var statList = blockStatement.stats
+    	for (var i = 0; i < statList.length; i++) {
+    		val stat = statList.get(i)
+    		if (stat instanceof ForStatement) {
+    			stat.loopBody.decomposeForLoop
+
+		    	if (stat.loopExpression !== null) {
+			    	stat.loopBody.stats.add(stat.loopExpression)
+		    	}
+		    	var whileStat = QuingoFactory::eINSTANCE.createWhileStatement => [
+		    		it.condExpression = stat.condExpression
+		    		it.whileBody = stat.loopBody
+		    	]
+
+				// Pack the init statement and WhileStatment into a new BlockStatment
+		    	var newBlock = QuingoFactory::eINSTANCE.createBlockStatement
+		    	newBlock.stats.add(stat.initExpression)
+		    	newBlock.stats.add(whileStat)
 		
-		// Global variable initialization
-		sIndex = 0
-		iIndex = 3 // r0 for false, r1 for true, r2 for freeAddr
-		fIndex = 1 // f0 for 0.0
-		duration = "1, "
+				// Replace the ForStatement with the new BlockStatement
+		    	statList.set(i, newBlock)
+    		}
+    		else if (stat instanceof BlockStatement) {
+    			stat.decomposeForLoop
+    		}
+    		else if (stat instanceof UsingStatement) {
+    			stat.block.decomposeForLoop
+    		}
+    		else if (stat instanceof WhileStatement) {
+    			stat.whileBody.decomposeForLoop
+    		}
+    		else if (stat instanceof IfStatement) {
+    			stat.ifStat.decomposeForLoop
+    			stat.elseStat?.decomposeForLoop
+    		}
+    	}
+    }
 
-		ifIndex = 0
-		whileIndex = 1 // must be positive since its sign is used in compiling CONTINUE statements 
-		arrayIndex = 0
-		switchIndex = 0
-		funIndex = 0
+    def dispatch MetaData compile(FormalParameter nodeFormalParam, HashMap<String, MetaData> map) {
 
-		config = new HashMap<String, Opaque>
-		indexMap = new HashMap<EObject, Integer>
-		regToMeta = new HashMap<String, MetaData>
-		timerMap = new HashMap<TimerDeclaration, Integer>
+        while (map.containsKey(nodeFormalParam.name)) {
+            nodeFormalParam.name = nodeFormalParam.name + "-2";
+        }
+        var meta = allocRegForVariable(nodeFormalParam.name, nodeFormalParam.type, map)
 
-		memoryAddr = Configuration.staticAddr + INT_SIZE // [Configuration.staticAddr] = 0
-		output = ""
-		fsaGlobal = fsa
-		left = false
-		global = 0
-		
-		var resourceSet = resource.resourceSet
-		for (res : resourceSet.resources) {
-			if (res.URI.fileExtension == "qfg") {
-				var prog = res.contents.head as Program
-				for (opaque: prog?.eAllContents.toIterable.filter(Opaque))
-					config.put(opaque.name, opaque)
+
+        return meta
+    }
+
+    def dispatch MetaData compile(LocalVarDecl nodeVarDecl, HashMap<String, MetaData> map) {
+
+        for (init: nodeVarDecl.init) {
+            init.compile(map)
+        }
+
+        return null
+    }
+
+    /**
+     * VariableInit:
+     *  varName=VariableName ("=" value=Expression)?;
+     */
+    def dispatch MetaData compile(VariableInit nodeVarWithInit, HashMap<String, MetaData> map) {
+
+        var varName = nodeVarWithInit.varName  // if this name is already used, rename it.
+        while (map.containsKey(varName.name)) {
+            varName.name = varName.name + "-2";
+        }
+        // get the type of this variable
+        var typeVariable = (nodeVarWithInit.eContainer as LocalVarDecl).type
+
+        var meta = allocRegForVariable(varName.name, typeVariable, map)
+        if (nodeVarWithInit.value !== null) {
+            assignMetaData(meta, nodeVarWithInit.value.compile(map), typeVariable,
+                           NodeModelUtils.getNode(nodeVarWithInit))
+        }
+
+        return meta
+    }
+
+    /**
+     * BlockStatement:
+     *   {BlockStatement} "{" (stats += Statement)* "}";
+     */
+    def dispatch MetaData compile(BlockStatement stat, HashMap<String, MetaData> map) {
+        if (stat.stats !== null) {
+            for (st: stat.stats) {
+                var meta = st.compile(map)
+                // only return statements and structures containing 'return' will return non-null meta
+                if (meta !== null) {
+                    return meta
+                }
+            }
+        }
+        return null
+    }
+
+    def dispatch MetaData compile(WaitStatement stat, HashMap<String, MetaData> map) {
+        var metaWaitTime = stat.lis.get(stat.lis.length - 1).compile(map)
+
+        genInsnWait(metaWaitTime)
+
+        return null
+    }
+
+    def dispatch MetaData compile(ReturnStatement retStat, HashMap<String, MetaData> map) {
+
+        var container = retStat.eContainer
+        // return can be within a function through multiple levels of blocks
+        while (!(container instanceof FunDeclaration)) {
+            container = container.eContainer
+        }
+
+        var MetaData metaRetValue = null
+
+        if (retStat.value !== null) {
+
+            metaRetValue = retStat.value.compile(map)
+            var fun = container as FunDeclaration
+
+            if (fun.name.equals("main")) {
+                // serialize and export the data to shared memory using exportMetaData
+                var metaMockStackPtr   = new MetaData
+                metaMockStackPtr.type  = new PointerType
+                metaMockStackPtr.value = 0
+                var regMockStackPtr    = metaMockStackPtr.register
+                metaMockStackPtr.valid.setOnlyReg
+
+                // load the shared memory address to the `regMockStackPtr` register
+                loadImmToReg(strToGPR(regMockStackPtr), Configuration.sharedAddr,
+                             'load shared memory address to regMockStackPtr')
+
+                var metaMockHeapPtr   = new MetaData
+                metaMockHeapPtr.type  = new PointerType
+                metaMockHeapPtr.value = 0
+                var regMockHeapPtr    = metaMockHeapPtr.register
+                loadImmToReg(strToGPR(regMockHeapPtr), Configuration.sharedAddr,
+                             'load shared memory address to regMockHeapPtr')
+
+                metaMockHeapPtr.valid.setOnlyReg
+                exportMetaData(metaMockStackPtr, metaMockHeapPtr, metaRetValue, fun.type)
+
+            } else {                    // not main function
+
+                if (!(fun.type instanceof UnitType)) {
+                    var ret = map.get("return")
+                    assignMetaData(ret, metaRetValue, fun.type, NodeModelUtils.getNode(retStat))
+                }
+            }
+        } else {
+            metaRetValue = new MetaData // use a fresh new metadata to represent the returned nothing.
+        }
+        var index = mapAstNodeToIndex.get(container)
+        jumpToFunctionEnd(index)
+
+        return metaRetValue
+    }
+
+    def dispatch MetaData compile(FunctionCall call, HashMap<String, MetaData> map) {
+    	call.exp.compile(map)
+        return null
+    }
+
+    def dispatch MetaData compile(ContinueStatement stat, HashMap<String, MetaData> map) {
+        var container = stat.eContainer
+        while (!(container instanceof WhileStatement || container instanceof ForStatement)) {
+            container = container.eContainer
+        }
+        var continueindex = mapAstNodeToIndex.get(container)
+        if (continueindex.intValue > 0) {   // check why this checking is required
+	        var varSet = mapWhileToVarSet.get(container)
+	        storeVarsToMem(varSet, map, false)
+            jumpBackToLoopStart(continueindex)
+        }
+        return new MetaData
+    }
+
+    def dispatch MetaData compile(BreakStatement stat, HashMap<String, MetaData> map) {
+        var container = stat.eContainer
+        while (!(container instanceof WhileStatement || container instanceof ForStatement
+          || container instanceof SwitchStatement)) {
+            container = container.eContainer
+        }
+        var breakindex = Math.abs(mapAstNodeToIndex.get(container))
+        var varSet = mapWhileToVarSet.get(container)
+        storeVarsToMem(varSet, map, false)
+        jumpToLoopEnd(breakindex)
+
+        return new MetaData
+    }
+
+    def dispatch MetaData compile(WhileStatement whileStatement, HashMap<String, MetaData> map) {
+
+        printNode(NodeModelUtils.getNode(whileStatement))
+        var tempwhileindex = whileIndex++
+        mapAstNodeToIndex.put(whileStatement, -tempwhileindex)
+
+        var whileStartLabel = genLoopStartLabel(tempwhileindex)
+        var whileEndLabel = genLoopEndLabel(tempwhileindex)
+
+        var metaCondResult = whileStatement.condExpression.compile(map)
+        var count = 0
+        
+        var containBreakOrContinue = whileStatement.whileBody.containBreakOrContinue
+
+        while (metaCondResult.valid.constant && !containBreakOrContinue) {
+
+            if (metaCondResult.value as Boolean) {  // the while condition is true
+
+                // the following two statements are actually a loop-unrolling process
+                if (whileStatement.whileBody.compile(map) !== null) {        // evaluate the body
+	                genQasmLabel(whileEndLabel)
+                	return null
+                }
+                metaCondResult = whileStatement.condExpression.compile(map) // update the condition
+
+            } else {                                // the while condition is false
+
+                // upon loop exit, generate the loop end label.
+                genQasmLabel(whileEndLabel)
+                return null
+
+            }
+
+            count++  // count how many times the loop have been unrolled
+            if (count >= Configuration.maxUnrolling) {
+                genQasmComment("Unrolling is up to " + count + " loops")
+                // after maxUnrolling times, use instructions for the loop
+                metaCondResult.valid.setOnlyReg
+            }
+        }
+
+        // get all array variables (ExpVariable) in the while body
+        //var set = collectVariable(whileStatement.whileBody)
+        // TODO: check why is this line abandoned?
+        var set = new HashSet<String>
+        for (v: whileStatement.eAllContents.toIterable.filter(ExpVariable)) {
+            set.add(v.value.name)
+        }
+        if (containBreakOrContinue) {
+        	mapWhileToVarSet.put(whileStatement, set)
+        }
+
+        // store the array to the memory
+        storeVarsToMem(set, map, true)
+
+        mapAstNodeToIndex.put(whileStatement, tempwhileindex)
+
+        // -------------- use instructions to implement the while loop ---------------
+        genInsnForWhileHead(whileStatement.condExpression, whileStartLabel, whileEndLabel, map)
+
+        // generate instructions for the while body, and keep related arrays in the memory
+        genInsnForWhileBody(whileStatement.whileBody, set, map)
+
+        genInsnForWhileTail(whileStartLabel, whileEndLabel)
+
+        if (containBreakOrContinue) {
+        	mapWhileToVarSet.remove(whileStatement)
+        }
+        return null
+    }
+
+    def dispatch MetaData compile(SwitchStatement switchStatement, HashMap<String, MetaData> map) {
+
+        if (switchStatement.switchBody === null) {  // no cases inside, skip
+            return null
+        }
+
+        var metaSwitchValue = switchStatement.expSwitchValue.compile(map)
+        if (metaSwitchValue.valid.constant) {
+            var match = false
+            var count = switchStatement.switchBody.size
+            var i = 0
+
+            for (i = 0; i < count; i++) {
+
+                var labeledBlock = switchStatement.switchBody.get(i)
+
+                if (match && labeledBlock.caseActionStats !== null) {
+                    labeledBlock.caseActionStats.compile(map)
+                    return null
+                }
+
+                var metaCaseValue = labeledBlock.expCaseValue.compile(map)
+
+                if (metaCaseValue.valid.constant) {
+                    match = metaSwitchValue.value == metaCaseValue.value
+
+                } else {
+                    i = count + 1     // break;
+
+                }
+            }
+
+            if (i === count) {        // all the cases are constant
+                switchStatement.defaultBlock.caseActionStats.compile(map)
+                return null
+            }
+        }
+
+        var index = switchIndex++
+        mapAstNodeToIndex.put(switchStatement, index)
+        var switchBody = switchStatement.switchBody
+
+        /**
+         * Consider the following switch statement:
+         * ```quingo
+         * switch(a) {
+         *     case 0:
+         *     case 1: // do sth here.
+         *     case 2:
+         *     case 3: // do some other thing here.
+         *     default:
+         * }
+         * ```
+         * if a is 2, then it should directly jump to and execute the code in case 3, since
+         * case 2 is empty.
+         *
+         * `indexNextActionBlock[i]` stores the index of the first following block which contains actions after
+         *   the i-th case. `indexNextActionBlock[i]` being -1 means it is one of consecutive empty
+         *   cases in the end.
+         */
+        var length = switchBody.length
+        var indexNextActionBlock = newIntArrayOfSize(length + 1)
+        indexNextActionBlock.set(length, -1)
+
+        for (var i = length - 1; i >= 0; i--) {
+
+            if (switchBody.get(i).caseActionStats === null) {
+                indexNextActionBlock.set(i, indexNextActionBlock.get(i + 1))
+            } else {
+                indexNextActionBlock.set(i, i)
+            }
+        }
+
+        map.storeToMem
+
+        // the register storing the value of `xxx` inside `switch(xxx)`
+        var regSwitchValue = metaSwitchValue.register
+
+        for (var i = 0; i < switchBody.length; i++) {           // handle each case
+
+            if (indexNextActionBlock.get(i) !== -1) {            // skip the last empty ones
+
+                var caseStartLabel = genCaseStartLabel(index, i)
+                var caseEndLabel = genCaseEndLabel(index, i)
+
+                var labeledBlock = switchBody.get(i)
+                var metaCaseValue = labeledBlock.expCaseValue.compile(map)
+                var regCaseValue = metaCaseValue.register
+
+                if (labeledBlock.caseActionStats === null) {    // TODO: check why it can work here.
+
+                    gotoLabelIfEqual(regSwitchValue, regCaseValue, caseStartLabel)
+
+                } else {
+
+                    gotoLabelIfNotEqual(regSwitchValue, regCaseValue, caseEndLabel)
+
+                    genQasmLabel(caseStartLabel)
+
+                    labeledBlock.caseActionStats.compile(map)
+
+                    genQasmLabel(caseEndLabel)
+                }
+            }
+        }
+
+        switchStatement.defaultBlock?.caseActionStats?.compile(map) // null-safe calling
+
+        genQasmLabel(genLoopEndLabel(index))
+        return null
+    }
+
+    def dispatch MetaData compile(IfStatement stat, HashMap<String, MetaData> map) {
+        var condition = stat.expression.compile(map)
+
+        if (condition.valid.constant) {  // the if-else can be statically resolved
+
+            if (condition.value as Boolean) { return stat.ifStat.compile(map) }
+            else { return stat.elseStat?.compile(map) }
+
+        }
+
+        // using instructions to do if-else.
+        var set = collectVariable(stat.ifStat)
+
+        storeVarsToMem(set, map, true)
+
+        var index = ifIndex++
+        var creg = condition.register
+        var ifElseLabel = genIfElseLabel(index)
+        var ifEndLabel = genIfEndLabel(index)
+        if (stat.elseStat === null) {   // only if, no else
+
+            gotoLabelIfNotEqual(creg, 'r1', ifEndLabel)
+
+            stat.ifStat.compile(map)
+            storeVarsToMem(set, map, true)
+
+            genQasmLabel(ifEndLabel)
+
+        } else {                        // if with the else branch
+
+            // condition unsatisfied, goto else body
+            gotoLabelIfNotEqual(creg, 'r1', ifElseLabel)
+
+            stat.ifStat.compile(map)                // if body
+            storeVarsToMem(set, map, true)
+            insertQasmGoto(ifEndLabel)              // skip the else body
+
+
+            genQasmLabel(ifElseLabel)               // else body
+            var elseSet = collectVariable(stat.elseStat)
+
+            storeVarsToMem(elseSet, map, true)
+
+            stat.elseStat.compile(map)
+
+            storeVarsToMem(elseSet, map, true)
+
+            genQasmLabel(ifEndLabel)          // if structure end
+        }
+        return null
+    }
+
+    def dispatch MetaData compile(Assignment assignment, HashMap<String, MetaData> map) {
+
+        var metaRightSide = assignment.value.compile(map)
+
+        var leftExp = assignment.left as Expression
+        var metaLeftSide = compileLeftHandSideExpression(leftExp, map)
+
+        // TODO: create wrapper: copy concrete type
+        assignMetaData(metaLeftSide, metaRightSide, getQuingoTypeOfExpr(leftExp),
+                       NodeModelUtils.getNode(assignment))
+        return null
+    }
+
+    def dispatch MetaData compile(OpAssignment assignment, HashMap<String, MetaData> map) {
+        var metaRightSide = assignment.right.compile(map)
+
+        var leftExp = assignment.left as Expression
+        var metaLeftSide = compileLeftHandSideExpression(leftExp, map)
+
+        var metaOpResult = compileOperator(metaLeftSide, metaRightSide,
+                                           assignment.op.replaceFirst("=", ""))
+
+        assignMetaData(metaLeftSide, metaOpResult, getQuingoTypeOfExpr(leftExp),
+                       NodeModelUtils.getNode(assignment))
+        return null
+    }
+
+    def dispatch MetaData compile(UsingStatement stat, HashMap<String, MetaData> map) {
+        var qnum = 0
+
+        for (par: stat.pars) {
+
+            var meta = allocateQubit(par.name, par.type, map)
+
+            if (meta.link === null) {
+                qnum += 1
+            } else {
+                qnum += meta.value as Integer
+            }
+        }
+        stat.block.compile(map)
+        sIndex -= qnum // deallocate qubits
+        return null
+    }
+
+    def dispatch MetaData compile(EmptyStatement stat, HashMap<String, MetaData> map) {
+        return null
+    }
+
+    def dispatch MetaData compile(TimerDeclaration timer, HashMap<String, MetaData> map) {
+        timerMap.put(timer, global)
+        return null
+    }
+
+    def dispatch MetaData compile(TimingConstraint stat, HashMap<String, MetaData> map) {
+        var timer = timerMap.get(stat.timer)
+        var meta = stat.value.compile(map)
+        var delay = timer + meta.value as Integer - global
+        genInsnWait(delay)
+        global += delay
+        return null
+    }
+
+    def dispatch MetaData compile(ExpFunctionCall exp, HashMap<String, MetaData> map) {
+        var meta = compileFunctionCall(exp.fun, exp.pars, map, NodeModelUtils.getNode(exp))
+        return meta
+    }
+
+    def dispatch MetaData compile(Or exp, HashMap<String, MetaData> map) {
+        var metaLeftOperand = exp.left.compile(map)
+        var metaRightOperand = exp.right.compile(map)
+        if (metaLeftOperand.valid.constant && metaRightOperand.valid.constant) {
+            return new MetaData(metaLeftOperand.value as Boolean || metaRightOperand.value as Boolean)
+        }
+        var regLeftOperand = metaLeftOperand.register
+        var regRightOperand = metaRightOperand.register
+        var metaResult = allocMetaAndStackForType(QuingoBoolType)
+        var regOrResult = metaResult.register
+        genInsnOrRegs(regOrResult, regLeftOperand, regRightOperand)
+
+        return metaResult
+    }
+
+    def dispatch MetaData compile(And exp, HashMap<String, MetaData> map) {
+        var metaLeftOperand = exp.left.compile(map)
+        var metaRightOperand = exp.right.compile(map)
+        if (metaLeftOperand.valid.constant && metaRightOperand.valid.constant) {
+            return new MetaData(metaLeftOperand.value as Boolean && metaRightOperand.value as Boolean)
+        }
+
+        var regLeftOperand = metaLeftOperand.register
+        var regRightOperand = metaRightOperand.register
+        var metaResult = allocMetaAndStackForType(QuingoBoolType)
+        var regAndResult = metaResult.register
+        genInsnAndRegs(regAndResult, regLeftOperand, regRightOperand)
+
+        return metaResult
+    }
+
+    def dispatch MetaData compile(Add exp, HashMap<String, MetaData> map) {
+        var metaLeftOperand = exp.left.compile(map)
+        var metaRightOperand = exp.right.compile(map)
+        var metaResult = compileOperator(metaLeftOperand, metaRightOperand, exp.op)
+        return metaResult
+    }
+
+    def dispatch MetaData compile(Mult exp, HashMap<String, MetaData> map) {
+        var metaLeftOperand = exp.left.compile(map)
+        var metaRightOperand = exp.right.compile(map)
+        var metaResult = compileOperator(metaLeftOperand, metaRightOperand, exp.op)
+        return metaResult
+    }
+
+    def dispatch MetaData compile(Equal exp, HashMap<String, MetaData> map) {
+        var metaLeftOperand = exp.left.compile(map)
+        var metaRightOperand = exp.right.compile(map)
+
+        if (metaLeftOperand.valid.constant && metaRightOperand.valid.constant) {
+            if (exp.op == "==") {
+                return new MetaData(metaLeftOperand.value == metaRightOperand.value)
+            } else {
+                return new MetaData(metaLeftOperand.value != metaRightOperand.value)
+            }
+        }
+
+        var regLeftOperand = metaLeftOperand.register
+        var regRightOperand = metaRightOperand.register
+        var metaResult = allocMetaAndStackForType(QuingoBoolType)
+        var regResult = metaResult.register
+        genInsnsCheckEquality(regResult, regLeftOperand, regRightOperand, exp.op, metaLeftOperand.type)
+
+        return metaResult
+    }
+
+    def dispatch MetaData compile(NEqual exp, HashMap<String, MetaData> map) {
+
+        var metaLeftOperand = exp.left.compile(map)
+        var metaRightOperand = exp.right.compile(map)
+
+        if (metaLeftOperand.valid.constant && metaRightOperand.valid.constant) {
+            if (metaLeftOperand.type instanceof DoubleType) {
+                var floatLeftOperand = metaLeftOperand.value as Float
+                var floatRightOperand = metaRightOperand.value as Float
+                return switch (exp.op) {
+                    case "<":
+                        new MetaData(floatLeftOperand < floatRightOperand)
+                    case "<=":
+                        new MetaData(floatLeftOperand <= floatRightOperand)
+                    case ">=":
+                        new MetaData(floatLeftOperand >= floatRightOperand)
+                    case ">":
+                        new MetaData(floatLeftOperand > floatRightOperand)
+                }
+            } else {
+                var intLeftOperand = metaLeftOperand.value as Integer
+                var intRightOperand = metaRightOperand.value as Integer
+                return switch (exp.op) {
+                    case "<":
+                        new MetaData(intLeftOperand < intRightOperand)
+                    case "<=":
+                        new MetaData(intLeftOperand <= intRightOperand)
+                    case ">=":
+                        new MetaData(intLeftOperand >= intRightOperand)
+                    case ">":
+                        new MetaData(intLeftOperand > intRightOperand)
+                }
+            }
+        }
+
+        var regLeftOperand = metaLeftOperand.register
+        var regRightOperand = metaRightOperand.register
+        var type = metaLeftOperand.type
+        var metaResult = allocMetaAndStackForType(QuingoBoolType)
+        var regResult = metaResult.register
+        genInsnsPOCmp(regResult, regLeftOperand, regRightOperand, exp.op, type)
+
+        return metaResult
+    }
+
+    def dispatch MetaData compile(Unary exp, HashMap<String, MetaData> map) {
+
+        var metaResult = exp.final.compile(map)
+        if (exp.op == "+") {
+            return metaResult
+        }
+
+        if (metaResult.valid.constant) {
+            if (exp.op == "-") {
+                if (metaResult.value instanceof Integer) {
+                    return new MetaData(-(metaResult.value as Integer))
+                } else if (metaResult.value instanceof Float) {
+                    return new MetaData(-(metaResult.value as Float))
+                }
+
+            } else if (exp.op == "!") {
+                return new MetaData(!(metaResult.value as Boolean))
+
+            } else {
+                throw new Exception("Found undefined unary operation " + exp.op)
+            }
+        }
+
+        metaResult.register
+
+        var metaResult2 = allocMetaAndStackForType(metaResult.type)     // can we use the old metaResult?
+        var regTarget = metaResult2.register
+        genInsnForUnary(regTarget, metaResult.reg, exp.op, metaResult.type)
+        return metaResult2
+    }
+
+    /**
+     * {ExpVariable} value=[Variable]
+     *
+     * Get the meta data of this variable expression.
+     */
+    def dispatch MetaData compile(ExpVariable exp, HashMap<String, MetaData> map) {
+
+        var MetaData meta
+        var value = (exp as ExpVariable).value
+        if (value instanceof FunDeclaration) {
+            meta = new MetaData(EcoreUtil.getURI(exp.value).toString)
+
+        } else {
+
+            meta = map.get(exp.value.name)
+
+            if (!bExprOnLeftSide && !meta.valid.atLeastOne && !(meta.type instanceof QubitType)) {
+                throw new IOException("The value of variable " + value.name + " in line "
+                    + NodeModelUtils.getNode(exp).getStartLine + " of "
+                    + exp.eResource.URI.lastSegment + " is undefined!")
+            }
+        }
+
+        return meta
+    }
+
+    def dispatch MetaData compile(BooleanLiteral exp, HashMap<String, MetaData> map) {
+        var meta = new MetaData(exp.isTrue)
+        return meta
+    }
+
+    def dispatch MetaData compile(IntLiteral exp, HashMap<String, MetaData> map) {
+        var meta = new MetaData(exp.value)
+        return meta
+    }
+
+    def dispatch MetaData compile(DoubleLiteral exp, HashMap<String, MetaData> map) {
+        var meta = new MetaData(exp.value)
+        return meta
+    }
+
+    /**
+     *  ArrayAccess returns Expression:
+     *          {ExpVariable} value=[Variable] ({ArrayAccess.array=current}
+     *            "[" dim=Expression "]")* ({ExpLength.left=current} ".length")?;
+     *
+     */
+    // TODO: this encapsulation has not been finished.
+    def dispatch MetaData compile(ArrayAccess exp, HashMap<String, MetaData> map) {
+        // get the base address
+//        var expArray = exp.array as ExpVariable
+//        var name = expArray.value.name
+//        if (name.equals('res')) {
+//            println('got res!')
+//        }
+
+        var metaArray = exp.array.compile(map)
+        var metaIndex = exp.dim.compile(map)
+
+        if (metaArray.valid.constant) {
+
+            if (metaIndex.valid.constant) {
+
+                var intIndex = convToInt(metaIndex.value)
+                // note, the `value` field in the MetaData for an array indicates the length of this array
+                var iArrayLength = convToInt(metaArray.value)
+                if (intIndex >= iArrayLength) {
+                    var node = NodeModelUtils.getNode(exp)
+                    throw new IndexOutOfBoundsException(node.getText + " at line " + node.getStartLine
+                        + " accesses index " + intIndex + " in an array of size " + iArrayLength
+                    )
+                }
+
+                return metaArray.link.get(intIndex)     // fetch the element at given index
+
+            } else {
+
+                metaArray.storeToMem                    // put this array to memory
+            }
+        }
+
+        var typeArrayElement = getArrayElementType(getQuingoTypeOfExpr(exp.array))
+        // var typeArrayElement = (xsemantics.exptype(exp.array).value as ArrayType).ptype
+
+        /**
+         * `exp` appears as a left-value and the element type is not an array type
+         *  On the left side means we are going to assign a value to it.
+         *  We can only assign values to primitive types, which should not be an array.
+         * TODO: check, what if we are going to assign a subarray?
+         */
+        var bPrimitiveValueForAssignment  = bExprOnLeftSide && !(typeArrayElement instanceof ArrayType)
+        val iArrElementSize               = dataSize(typeArrayElement)
+
+
+        // calculate shift
+        var String regElement = allocRegister
+
+        var iOffsetCurEleToBodyBaseAddr = 0
+        var metaElement                 = new MetaData(regElement)
+        metaElement.valid.setOnlyReg
+
+        var regArrBodyAddr = metaArray.register
+        if (metaIndex.valid.constant) {       // the newest value of the dimension size is in the meta data
+            iOffsetCurEleToBodyBaseAddr = iArrElementSize * convToInt(metaIndex.value) + Serializer.INT_SIZE
+            if (bPrimitiveValueForAssignment) {
+                metaElement.reg   = regArrBodyAddr
+                metaElement.value = iOffsetCurEleToBodyBaseAddr
+                metaElement.type  = new PointerType
+            } else {
+                loadMemToReg(typeArrayElement, regElement, iOffsetCurEleToBodyBaseAddr, regArrBodyAddr) // actual fetch
+                metaElement.type = copyQuingoType(typeArrayElement)
+            }
+
+        } else {                        // the newest value of the dimension size is not in the meta data
+
+            loadImmToReg(strToGPR(regElement), iArrElementSize)  // regElement = size
+            var regIndex = metaIndex.register
+
+            genInsnMulRegs(regElement, regElement, regIndex)     // regElement *= dim
+
+            // regElement += 4 (considering the element that stores the length)
+            genInsnAddConst(regElement, Serializer.INT_SIZE)
+            genInsnAddRegs(regElement, regArrBodyAddr, regElement)
+
+            if (bPrimitiveValueForAssignment) {
+                metaElement.reg = regElement
+                metaElement.value = 0
+                metaElement.type = new PointerType
+            } else {
+                loadMemToReg(typeArrayElement, regElement, 0, regElement)  // final fetch
+
+                metaElement.type = copyQuingoType(typeArrayElement)
+            }
+        }
+
+        return metaElement
+    }
+
+    /**
+     * Compile the structure `{ExpLength.left=current} ".length"`, i.e., retrieve the length of the array or tuple
+     *  in `left`. Write the result in the returned metaLength, and generate required instructions to move data.
+     */
+    def dispatch MetaData compile(ExpLength exp, HashMap<String, MetaData> map) {
+
+        var metaArray = exp.left.compile(map)
+        var metaLength = new MetaData
+
+        if (metaArray.valid.constant) {
+            metaLength = new MetaData(metaArray.value as Integer)
+
+        } else {
+            var regLength = metaLength.register
+
+            loadMemToReg(regLength, 0, metaArray.reg) // load the length of metaArray to `regLength`
+//            loadLengthOfArrayToReg(metaArray, regLength)
+
+            metaLength.valid.setOnlyReg
+        }
+
+        return metaLength
+    }
+
+    /**
+     * Compile the ExpTuple, whihc is a tuple whose elements directly written in parentheses: (exp0, exp1, ...).
+     * Write the resultant tuple in metaTupleResult, and generate required instructions to move data.
+     */
+    def dispatch MetaData compile(ExpTuple exp, HashMap<String, MetaData> map) {
+
+        var iNumOfElementsInTuple = exp.texp.length
+        if (iNumOfElementsInTuple === 1) {
+            return exp.texp.get(0).compile(map)
+        }
+
+        // create a MetaData for the result tuple
+        var metaTupleResult   = new MetaData
+        metaTupleResult.value = iNumOfElementsInTuple
+        metaTupleResult.link  = new ArrayList<MetaData>
+        metaTupleResult.type  = QuingoFactory.eINSTANCE.createTupleType
+
+        // assign each of the elements in the tuple
+        for (var i = 0; i < iNumOfElementsInTuple; i++) {
+            metaTupleResult.link.add(exp.texp.get(i).compile(map))
+        }
+
+        return metaTupleResult
+    }
+
+    /**
+     * Compile the ExpArray: `{expr0, expr1, ...}`
+     *  This is an array whose elements are directly written in braces.
+     */
+    def dispatch MetaData compile(ExpArray exp, HashMap<String, MetaData> map) {
+
+        val typeArrayElement = getQuingoTypeOfExpr(exp.exp.get(0))
+
+        var typeArray = QuingoFactory.eINSTANCE.createArrayType => [
+            it.ptype = typeArrayElement
+        ]
+
+        // create a MetaData for the result array
+        var metaArrayResult   = allocMetaAndStackForType(typeArray)
+        var iNumOfElements    = exp.exp.length
+        metaArrayResult.value = iNumOfElements
+        metaArrayResult.valid.setOnlyConstant
+        var regArrayResult = metaArrayResult.register       // allocate a register for the resultant array
+
+        // Allocate memory for the array
+        loadImmToReg(strToGPR(regArrayResult), memoryAddr)  // load the address to the register
+        var iAddrForNextElement = memoryAddr + Serializer.INT_SIZE
+        var iElementSize        = dataSize(typeArrayElement)
+        memoryAddr              = iAddrForNextElement + iNumOfElements * iElementSize
+
+        // Create array members
+        metaArrayResult.link = new ArrayList<MetaData>
+
+        // evaluate each each expression in `{expr0, expr1, ...}` and append it to the element list of metaArrayResult
+        for (exprArrayElement : exp.exp) {
+
+            var metaElement = allocMetaAndStackForType(typeArrayElement)
+            createMetaData(metaElement, typeArrayElement, null)
+
+            metaElement.address  = iAddrForNextElement
+            iAddrForNextElement += iElementSize
+            assignMetaData(metaElement, exprArrayElement.compile(map), typeArrayElement,
+                           NodeModelUtils.getNode(exprArrayElement))
+
+            metaArrayResult.link.add(metaElement)        // append the element
+        }
+
+        return metaArrayResult
+    }
+
+    /**
+     * Compile `ToInt(expr)`
+     */
+    def dispatch MetaData compile(ToInt exp, HashMap<String, MetaData> map) {
+
+        var metaExprResult = exp.value.compile(map)
+        if (metaExprResult.type instanceof IntType) {    // what does this line mean?
+            return metaExprResult
+        }
+
+        if (metaExprResult.valid.constant) {
+            return new MetaData((metaExprResult.value as Float).intValue)
+        }
+
+        var metaResultInt = allocMetaAndStackForType(QuingoIntType)
+        var regFloatValue = metaExprResult.register
+        var regResultInt = metaResultInt.register
+        genInsnConvFloatToInt(regResultInt, regFloatValue)
+
+        return metaResultInt
+    }
+
+    /**
+     * Compile `ToDboule(expr)`
+     */
+    def dispatch MetaData compile(ToDouble exp, HashMap<String, MetaData> map) {
+
+        var metaExprResult = exp.value.compile(map)
+        if (metaExprResult.type instanceof DoubleType) {    // what does this line mean?
+            return metaExprResult
+        }
+
+        if (metaExprResult.valid.constant) {
+            return new MetaData((metaExprResult.value as Integer).floatValue)
+        }
+        var metaResultFloat = allocMetaAndStackForType(QuingoDoubleType)
+        var regResultInt = metaExprResult.register
+        var reg = metaResultFloat.register
+
+        genInsnConvIntToFloat(reg, regResultInt)
+
+        return metaResultFloat
+    }
+
+    /** This function seems to get all variables appearing in the statement.
+     *
+     * After doing some experiment, I found that if a variable appears on the left-hand side of an
+     * assignment, the name of this variable will be collected.
+     *
+     * However, there is currently an exception, variables **defined** on the left-hand side will not
+     * be collected.
+     *
+     * Next TODO: check when this function is used and what the purpose of this function is.
+     * Currently, this function is only called for if and for statements.
+     */
+    def collectVariable(Statement stat) {
+        // println("statement to collect variable: " + NodeModelUtils.getNode(stat).getText)
+
+        var ret = new HashSet<String>
+        for (assignStatement : stat.eAllContents.toIterable.filter(Assignment)) {
+
+            printNode(NodeModelUtils.getNode(assignStatement))
+
+            var exprLeftSide = assignStatement.left
+
+            if (exprLeftSide instanceof ExpVariable) {
+                ret.add(exprLeftSide.value.name)        // add the array name
+
+            } else {
+
+                for (v : exprLeftSide.eAllContents.toIterable.filter(ExpVariable)) {
+                    ret.add(v.value.name)               // what's this for?
+                }
+            }
+        }
+
+        for (assignStatement : stat.eAllContents.toIterable.filter(OpAssignment)) {
+
+            printNode(NodeModelUtils.getNode(assignStatement))
+
+            var exprLeftSide = assignStatement.left
+            if (exprLeftSide instanceof ExpVariable) {
+                ret.add(exprLeftSide.value.name)
+
+            } else {
+
+                for (v : exprLeftSide.eAllContents.toIterable.filter(ExpVariable)) {
+                    ret.add(v.value.name)
+                }
+            }
+        }
+        // println("variables collected: " + String.join(', ', ret))
+        return ret
+    }
+
+    /** Process a function call
+     *
+     * Params:
+     *  - `v`   : an AST node corresponding to a function call.
+     *  - `pars`: the actual parameters passed to this function.
+     *  - `map` : the symbol table (a map from variable name to the meta data) seen at this moment
+     *  - `node`: the concrete AST node to process, which is used to emit error message.
+     */
+    def MetaData compileFunctionCall(Variable nodeVariable, EList<Expression> pars,
+                                     HashMap<String, MetaData> map, ICompositeNode node) {
+        var FunDeclaration fun
+        if (nodeVariable instanceof FunDeclaration) { // Normal function call
+
+            fun = nodeVariable
+
+        } else {                           // Higher order function call
+
+            var uri = URI.createURI(map.get(nodeVariable.name).reg)
+            fun = nodeVariable.eResource.resourceSet.getEObject(uri, false) as FunDeclaration
+        }
+        genQasmComment('start of ' + fun.name)
+        // println("function call: " + fun.name + ", line " + node.startLine +  ", content " +  _node.getText.strip)
+
+        if (fun.o) {                // an operation
+            /** for operations, perform actual function call, which consists of:
+             *   1. evaluate actual parameters (if expressions are used, evaluate them)
+             *   2. bind the actual parameters to the formal parameters.
+             *   3. compile the statements in the function block one by one.
+             */
+            var index = funIndex++
+            mapAstNodeToIndex.put(fun, index)
+            var newMap = new HashMap<String, MetaData>
+
+            if (!(fun.type instanceof UnitType)) {
+                var ret = allocMetaAndStackForType(fun.type)
+                createMetaData(ret, fun.type, newMap)
+                newMap.put("return", ret)
+            }
+
+            // Compile the parameters in the calling expression/statement
+            for (var i = 0; i < pars.size; i++) {
+                var metaFormalParam = fun.pars.get(i).compile(newMap)     // formal parameters
+                var typeFormalParam = fun.pars.get(i).type
+                var metaActualParam = pars.get(i).compile(map)            // actual parameters
+                assignMetaData(metaFormalParam, metaActualParam, typeFormalParam, node)
+            }
+
+            // Compile default parameters
+            for (var i = pars.size; i < fun.pars.size; i++) {
+                var metaFormalParam = fun.pars.get(i).compile(newMap)
+                var typeFormalParam = fun.pars.get(i).type
+                var metaActualParam = fun.pars.get(i).exp.compile(map)
+                assignMetaData(metaFormalParam, metaActualParam, typeFormalParam, node)
+            }
+
+            // Execute the called operation
+            fun.block?.compile(newMap)
+            var strFuncEndLabel = genFuncEndLabel(index)
+            genQasmLabel(strFuncEndLabel, 'end of ' + fun.name)
+
+            // genQasmComment('end of ' + fun.name)
+            return newMap.get("return")
+        }
+        else if (fun.p) {           // an opaque operation
+            // for opaque operation, generate the corresponding eQASM instructions.
+
+            var opaque_type = fetchConfig(fun, fun.name, "type")
+
+            if (opaque_type.equals("init")) {
+
+                genInsnWaitBasedInit(fun)
+
+            } else if (opaque_type.equals("meas")) {
+
+                var MsmtEqasmName = fetchConfig(fun, fun.name, "eqasm") as String
+                var regQotrs      = pars.get(0).compile(map).reg
+                var iMsmtDuration = fetchConfig(fun, fun.name, "duration") as Integer
+                var meta = genInsnForMsmt(MsmtEqasmName, regQotrs, iMsmtDuration)
+
+                genQasmComment('end of ' + fun.name)
+                return meta
+
+            } else if (opaque_type.equals("single-qubit")) {
+
+                // TODO: QWAIT should be inserted if duration > 7
+                val PreInterval = duration
+                val opName = fetchConfig(fun, fun.name, "eqasm") as String
+                val regQotrs = pars.get(0).compile(map).reg
+                genInsnSQOperation(PreInterval, opName, regQotrs)
+
+                duration = fetchConfig(fun, fun.name, "duration") as Integer
+
+            } else if (opaque_type.equals("single-qubit-param")) {
+
+                var PreInterval = duration
+
+                var pmeta = pars.get(1).compile(map)
+                if (!pmeta.valid.constant) {
+                    throw new IOException("[_compileFunctionCall] only constant double numbers are supported now!"
+                        + " Check line " + node.startLine + "\n"
+                    )
+                }
+
+                var opName = fetchConfig(fun, fun.name, "eqasm") as String
+                var param = pmeta.value as Float
+                var finalOpName = genOpNameWithParam(opName, param)
+
+                val regQotrs = pars.get(0).compile(map).reg
+
+                genInsnSQOperation(PreInterval, finalOpName, regQotrs)
+
+                duration = fetchConfig(fun, fun.name, "duration") as Integer
+
+            } else if (opaque_type.equals("two-qubit")) {
+                var q0 = pars.get(0).compile(map).reg.substring(1)
+                var q1 = pars.get(1).compile(map).reg.substring(1)
+
+
+                val PreInterval = duration
+                val opName = fetchConfig(fun, fun.name, "eqasm") as String
+                val qubit_pair = new QubitPair(intFromString(q0), intFromString(q1))
+
+                genInsnTQOperation(PreInterval, opName, qubit_pair)
+
+                duration = fetchConfig(fun, fun.name, "duration") as Integer
+
+            } else {
+	            throw new UnsupportedOperationException("Error, unrecognized opaque type: " + opaque_type)
+            }
+
+            global += fetchConfig(fun, fun.name, "duration") as Integer
+
+        } else {
+            throw new UnsupportedOperationException("Error, the function type of " + fun.name + "is neither 'operation' nor 'opaque'.")
+        }
+        genQasmComment('end of ' + fun.name)
+        return null
+    }
+
+    /**
+     * Set the left label to true while compiling the expression.
+     */
+    def compileLeftHandSideExpression(Expression leftExp, HashMap<String, MetaData> map) {
+        bExprOnLeftSide = true
+        var metaLeftSide = leftExp.compile(map)
+        bExprOnLeftSide = false
+        return metaLeftSide
+    }
+
+    /**
+     * Compile binary operators, add, sub, mul, div, rem
+     * Params:
+     *  - `lmeta`: The meta data of the left operand
+     *  - `rmeta`: The meta data of the right operand
+     *  - `op`: a string representation of the operator.
+     */
+    def MetaData compileOperator(MetaData lmeta, MetaData rmeta, String op) {
+        if (lmeta.valid.constant && rmeta.valid.constant) { // constant propogation
+            if (lmeta.type instanceof IntType) {            // integer operations
+                var lvalue = lmeta.value as Integer
+                var rvalue = rmeta.value as Integer
+                switch (op) {
+                    case "+": return new MetaData(lvalue + rvalue)
+                    case "-": return new MetaData(lvalue - rvalue)
+                    case "*": return new MetaData(lvalue * rvalue)
+                    case "/": return new MetaData(lvalue / rvalue)
+                    case "%": return new MetaData(lvalue % rvalue)
+                }
+            }
+            else {                                          // floating-point operations
+                var lvalue = lmeta.value as Float
+                var rvalue = rmeta.value as Float
+                switch (op) {
+                    case "+": return new MetaData(lvalue + rvalue)
+                    case "-": return new MetaData(lvalue - rvalue)
+                    case "*": return new MetaData(lvalue * rvalue)
+                    case "/": return new MetaData(lvalue / rvalue)
+                }
+            }
+        }
+        var lreg = lmeta.register
+        var rreg = rmeta.register
+        var meta = allocMetaAndStackForType(lmeta.type)
+        var reg = meta.register
+
+        if (lmeta.type instanceof DoubleType) {
+            Assertions.assertTrue(rmeta.type instanceof DoubleType)
+            genInsnForFpArith(reg, lreg, op, rreg)
+
+        } else {
+            genInsnForArith(reg, lreg, op, rreg)
+        }
+
+        return meta
+    }
+
+    // ----------------------------------------------------------------------------------
+    // start of resource management
+    // ----------------------------------------------------------------------------------
+    /**
+     * Allocate a qubit or a list of qubits.
+     * Params:
+     *  - `name`: the name of the qubit/qubits
+     *  - `type`: which should be `qubit` or `qubit[]` (TODO: higher dimension qubits)
+     *  - `map`: from variable name to the meta data
+     */
+    def MetaData allocateQubit(String name, Type type, HashMap<String, MetaData> map) {
+
+        var meta = new MetaData
+
+        if (type instanceof QubitType) {
+            meta.reg = "s" + sIndex
+            var Integer[] qArray = #{sIndex++}
+            genInsnSetQotrs(meta.reg, qArray)
+
+        } else {
+
+            var atype = type as ArrayType
+
+            if (atype.length === null) {
+
+                meta.value = 0
+
+            } else {
+
+                var metaLength = atype.length.compile(map)
+
+                if (!metaLength.valid.constant) {
+                    writeInsnToFile
+                    throw new IOException("[allocateQubit] The length of qubit array must be constant!\n")
+                }
+
+                meta.value = metaLength.value
+            }
+
+            meta.valid.constant = true
+            meta.link = new ArrayList<MetaData>
+
+            for (var i = 0; i < meta.value as Integer; i++) {
+                var child = new MetaData
+                child.reg = "s" + sIndex
+                var Integer[] qArray = #{sIndex++}
+                genInsnSetQotrs(child.reg, qArray)
+                meta.link.add(child)
+            }
+
+        }
+
+        meta.type = QuingoQubitType
+
+        map.put(name, meta)
+        return meta
+    }
+
+    /**
+     *  Get a free GPR which is not bound to any meta data.
+     *
+     * NOTE: there is a risk that this function falls into the dead loop. As Jintao noted, the
+     * registers have been all cleared. So, the dead loop should not appear unless there is a
+     * very-high-dimension array.
+     */
+    def String getFreeGpr() {
+        var reg = getNewPollingGprIndx()
+        while (mapRegToMetadata.get(reg) !== null) {
+            reg = getNewPollingGprIndx()
+        }
+        return reg
+    }
+
+    /* Get a new general purpose register. */
+    def String allocRegister() {
+        allocRegister(QuingoIntType)
+    }
+
+    /**
+     * Allocate a register to store a variable of the `type`.
+     * If this register has been used by another variable, the value of the old variable
+     *   is stored to the memory at first.
+     */
+    def String allocRegister(Type type) {
+
+        var String reg = ''
+        if (type instanceof DoubleType) {
+            reg = getNewPollingFprIdx()
+        } else {
+            reg = getNewPollingGprIndx()
+        }
+        // var String reg = getNewPollingRegIdx(type)
+
+        var meta = mapRegToMetadata.get(reg)  // get the possibly bound meta data
+
+        if (meta !== null) {            // if the register is already bound to a meta data
+            decoupleRegFromMeta(meta)
+            // var valid = meta.valid
+            // if (valid.onlyReg) {        //store reg to memory
+            //     ensureHasStackMemory(meta)
+            //     // write the old variable to the memory
+            //     storeRegToMem(meta.type, meta.reg, meta.address)
+            //     valid.setOnlyMem
+            // }
+            // meta.reg = ""
+            // valid.reg = false
+        }
+
+        return reg
+    }
+
+    /**
+     * Vacate the register assocated with this metadata, so the reigster can be used for other purposes.
+     */
+    def decoupleRegFromMeta(MetaData metadata) {
+        // TODO: check, if mapRegToMetadata should reset the corresponding entry?
+        var valid = metadata.valid
+        if (valid.onlyReg) {        //store reg to memory
+            ensureHasStackMemory(metadata)
+            storeRegToMem(metadata.type, metadata.reg, metadata.address)
+            valid.setOnlyMem
+        }
+        metadata.reg = ""
+        valid.reg = false
+    }
+
+    /**
+     * Allocate a register. Since all variables are stored in the memory, except the dedicated
+     * registers (f0, r0, r1, r2), the next register to retrive is adding one in the register index.
+     */
+    def String getNewPollingFprIdx() {
+        if (fIndex > 31) {
+            fIndex = 1
+        }
+        return "f" + fIndex++
+    }
+    def String getNewPollingGprIndx() {
+        if (iIndex > 31) {
+            iIndex = 3
+        }
+        return "r" + iIndex++
+    }
+    // def String getNewPollingRegIdx(Type type) {
+    //     if (type instanceof DoubleType) {
+    //         if (fIndex > 31) {
+    //             fIndex = 1
+    //         }
+    //         return "f" + fIndex++
+
+    //     } else {
+    //         if (iIndex > 31) {
+    //             iIndex = 3
+    //         }
+    //         return "r" + iIndex++
+    //     }
+    // }
+
+    def ensureHasStackMemory(MetaData meta) {
+        // if this meta data has not a corresponding space in the memory, allocate the required memory.
+        if (meta.address === 0) {
+            meta.address = allocStackMemory(meta.type)
+        }
+    }
+
+    /** Allocate a register for a variable with give name and type.
+     *
+     * Args:
+     *  - strVarName: the name of this variable
+     *  - typeVar   : the type of this variable
+     *  - map       : the context while performing register allocation for this variable
+     *
+     * Allocating a register including the following steps:
+     *  - create a metaData with required stack space for this variable (allocMetaAndStackForType)
+     *  - allocate required heap space for this variable (createMetaData)
+     */
+    def MetaData allocRegForVariable(String strVarName, Type typeVariable,
+                                     HashMap<String, MetaData> map) {
+
+        var metaVariable = allocMetaAndStackForType(typeVariable)
+        createMetaData(metaVariable, typeVariable, map)
+
+        if (xsemantics.isQubitTypes(typeVariable) || typeVariable instanceof FunctionType) {
+            metaVariable.type = QuingoQubitType
+        }
+        map.put(strVarName, metaVariable)
+        return metaVariable
+    }
+
+    /**
+     * Create a metaData with an associated stack space for the `type`.
+     *
+     * NOTE: the metaData created is superficial, which means the link field is still empty. In other words,
+     *   no other meta data has been created for elements of the type if this type is an array or tuple.
+     *
+     * TODO: it seems that every call to `allocMetaAndStackForType` is followed by `createMetadata`.
+     *       Maybe we can merge these two functions.
+     */
+    def MetaData allocMetaAndStackForType(Type type) {
+        var metaCreated = new MetaData
+        metaCreated.type = copyQuingoType(type)
+        metaCreated.address = allocStackMemory(type)
+        return metaCreated
+    }
+
+    /**
+     * Allocate memory for array members.
+     * Note, this function is designed to work only for array for now.
+     *
+     * Parameters:
+     *   - `metaArray`: the array metaData, which is operated by this function.
+     *   - `type`: the actual type to allocate memory for.
+     *   - `map`: the map from variable to metaData.
+     * TODO: check if we could understand this function as allocating heap space?
+     */
+    def void createMetaData(MetaData metaArray, Type _type, HashMap<String, MetaData> map) {
+
+        if (!(_type instanceof ArrayType)) { return }  // currently only works for array.
+
+        var type = _type as ArrayType
+        // Get the actual length and ptype
+        var exprArrLength  = type.length
+        var typeArrElement = type.ptype
+        var const = true
+
+        // it seems this while loop tries to check one property of the array is constant or not
+        // question: which property does the variable `const` refer to?
+        while (typeArrElement instanceof ArrayType) {    // recursively handle multi-dimension array
+
+            var iSubArrLength = typeArrElement.length
+
+            if (iSubArrLength !== null) {
+
+                // try to retrieve the length of the subarray
+                var metaSubArrLength = iSubArrLength.compile(map)
+
+                // if the length of the subarray is known
+                if (metaSubArrLength.valid.constant &&
+                // and the length is larger than maxUnrolling
+                     convToInt(metaSubArrLength.value) >= Configuration.maxUnrolling) {
+                // the set this label, which probably means to use instruction to initialize the corresponding memory.
+                    const = false
+                }
+            }
+
+            // recursion
+            typeArrElement.setLength(exprArrLength)
+            exprArrLength  = iSubArrLength
+            typeArrElement = typeArrElement.ptype
+        }
+
+        /**
+         * Rationale of storing memoryAddr to `regArrayHead`:
+         *  - When the space for the array is allocated in the function `allocMetaAndStackForType`, only the
+         *    space for a pointer is allocated. No space is allocated for the array body yet.
+         *  - Now, we are going to allocate the space for the array body. In the following
+         *    implementation, the array body is assumed to start at memoryAddr. In other words,
+         *    the array body is put on the top of the stack.
+         *  - The array register stores the array head, which is the pointer to the array body,
+         *    which is in turn memoryAddr.
+         */
+        var regArrayHead = metaArray.register
+        loadImmToReg(strToGPR(regArrayHead), memoryAddr)
+
+        var iArrLength = 0
+        if (exprArrLength !== null) {
+
+            // Decide the length of the array
+            var metaArrLength = exprArrLength.compile(map)
+
+            if (metaArrLength.valid.constant) { // if the length is a static value, retrieve it.
+                iArrLength = convToInt(metaArrLength.value)
+            }
+
+            if (iArrLength >= Configuration.maxUnrolling ||
+                  (metaArray.value instanceof Integer && (metaArray.value as Integer) < 0)) {
+
+                const = false
+                metaArray.valid.setOnlyReg
+
+                // Allocate a heap space to store the array length
+                // note: regArrayHead now points to the heap address
+                loadHeapPtrToReg(regArrayHead)
+
+                // store the length (metaArrLength) to the heap head (i.e., the array body)
+                var regArrLength = metaArrLength.register
+                storeRegToMem(regArrLength, 0, regArrayHead)
+
+                /* Allocate heap space for the array body, as a consquence, the heap pointer
+                   will be shifted by `INT_SIZE + NumOfElements * NumOfBytesPerElement`  */
+                allocHeapForArrayBody(type.ptype, metaArrLength)
+
+                if (type.ptype instanceof ArrayType) {
+                    // Set initial values
+                    var regEleArrHeadAddr = allocRegister
+                    // regEleArrHeadAddr <- content[regArrayHead] + INT_SIZE
+                    genInsnAddConst(regEleArrHeadAddr, regArrayHead, Serializer.INT_SIZE)
+
+                    var regIndex = allocRegister
+                    genInsnResetRegToZero(regIndex)            // regIndex = 0
+
+                    var iArrLabelIndex   = arrayIndex++
+                    var strArrStartLabel = genArrStartLabel(iArrLabelIndex)
+                    var strArrEndLabel   = genArrEndLabel(iArrLabelIndex)
+
+                    /**
+                     * The following loop performs this task:
+                     ```
+                     i = 0;
+                     while(i < ArrLength) {
+                         create MetaData for the i-th sub-array
+                         store the address of the body of the i-th sub-array to the i-th cell of the current array
+                     }
+                     ```
+                     */
+                    genQasmLabel(strArrStartLabel)
+                    // while head: while (i < ArrLength)
+                    regArrLength = metaArrLength.register
+                    genInsnGotoLabelUponCmp(regIndex, '>', regArrLength, strArrEndLabel)
+
+                    // while body: allocate recursively {
+
+                    var metaSubArray   = allocMetaAndStackForType(type.ptype)
+                    metaSubArray.value = -1
+                    createMetaData(metaSubArray, type.ptype, map)
+                    genInsnStoreArrHead(metaSubArray, regEleArrHeadAddr)
+
+                    // } end of loop body
+
+                    // while tail: increase the index
+                    genInsnAddConst(regEleArrHeadAddr, Serializer.POINTER_SIZE)
+                    genInsnAddConst(regIndex, 1)
+                    insertQasmGoto(strArrStartLabel)
+                    genQasmLabel(strArrEndLabel)    // loop end
+                }
+            }
+        }
+
+        if (const) {
+            metaArray.valid.setConAndReg
+            metaArray.value = iArrLength
+
+            // Allocate memory for the array
+            var iNumOfBytesPerElement = dataSize(typeArrElement)
+            var iBodyAddr             = allocStackForArrayBody(typeArrElement, iArrLength)
+            // var addr   = memoryAddr + Serializer.INT_SIZE
+            // memoryAddr = addr + iArrLength * iNumOfBytesPerElement
+
+            var iElementAddr = iBodyAddr + Serializer.INT_SIZE
+
+            // Create array members
+            metaArray.link = new ArrayList<MetaData>
+            for (var i = 0; i < iArrLength; i++) {
+                var metaElement     = allocMetaAndStackForType(type.ptype)
+                metaElement.address = iElementAddr
+                iElementAddr       += iNumOfBytesPerElement
+                createMetaData(metaElement, type.ptype, map)
+                metaArray.link.add(metaElement)
+            }
+        }
+
+        // Restore the original type
+        var atype = typeArrElement.eContainer as ArrayType
+        while (atype !== type) {
+            var temp = atype.length
+            atype.setLength(exprArrLength)
+            exprArrLength = temp
+            atype = atype.eContainer as ArrayType
+        }
+        type.setLength(exprArrLength)
+    }
+
+    /**
+     * Shift the heap pointer by `iNumOfBytes` bytes.
+     */
+    def shiftHeapPtr(int iNumOfBytes) {
+        genInsnAddConst('r2', 'r2', iNumOfBytes)
+    }
+
+    /**
+     * Shift the heap pointer by serveral bytes of which the number is specified by the
+     *   register `regNumOfBytes`.
+     */
+    def shiftHeapPtr(String regNumOfBytes) {
+        genInsnAddRegs('r2', 'r2', regNumOfBytes)
+    }
+
+    /**
+      * Allocate a piece of heap space to store an array body, which is:
+      *     `[ length(=n), ele_0, ele_1, ele_2, ..., ele_{n-1} ]`
+      * The result of this operation is shifting the heap pointer by:
+      *     `NumOfBytes = INT_SIZE + NumOfElements * NumOfBytesPerElement`
+      * where, the extra `INT_SIZE` is used to store the length of the array.
+      */
+    def void allocHeapForArrayBody(Type typeElement, MetaData metaNumOfElements) {
+
+        var iSizeOfType = dataSize(typeElement)
+
+        if (metaNumOfElements.valid.constant) {  // NumOfBytes is statically known
+            var iNumOfElements = convToInt(metaNumOfElements.value)
+            var iNumOfBytes = iNumOfElements * iSizeOfType + Serializer.INT_SIZE
+            shiftHeapPtr(iNumOfBytes)
+            return
+
+        } else {                                // NumOfBytes is not statically known
+
+            var regNumOfBytes = allocRegister
+            var regNumOfElements = metaNumOfElements.register
+            genInsnForMAC(regNumOfBytes, regNumOfElements, iSizeOfType, Serializer.INT_SIZE)
+            shiftHeapPtr(regNumOfBytes)
+            return
+        }
+
+    }
+
+    def int allocStackForArrayBody(Type typeElement, int iArrLength) {
+        var iStartAddr            = memoryAddr
+        var iNumOfBytesPerElement = dataSize(typeElement)
+
+        memoryAddr += Serializer.INT_SIZE + iArrLength * iNumOfBytesPerElement
+
+        return iStartAddr
+    }
+
+    /**
+     * Allocate a stack space to allocate a variable with the `type`, and return the starting
+     *   address of this space.
+     *
+     * For the primitive types, space is allocated to store its value. 4, 1, and 4 bytes are
+     *    allocated for `int`, `bool`, and `double`,respectively.
+     * For array, 4 bytes are allocated to store the pointer.
+     * For Tuple, the space is equal to the sum of the stack space of all elements
+     */
+    def allocStackMemory(Type type) {
+        var iStartAddrForVar = memoryAddr
+        memoryAddr += dataSize(type)
+        return iStartAddrForVar
+    }
+
+    // ----------------------------------------------------------------------------------
+    // end of resource management
+    // ----------------------------------------------------------------------------------
+
+    // ----------------------------------------------------------------------------------
+    // start of meta data utilities
+    // ----------------------------------------------------------------------------------
+    /** Jintao: a function used to implement assignment.
+     *
+     * Params:
+     *  - `metaTarget`: meta data of the target, or left-hand side of this assignment
+     *  - `metaSource` : meta data of the source, or right-hand side of this assignment
+     *  - `type`  : the concrete type of date on both sides of the assignment
+     *  - `node`  : the concrete AST node to process, which is used to emit error message.
+     */
+    def void assignMetaData(MetaData metaTarget, MetaData metaSource, Type type, ICompositeNode node) {
+
+        if (type instanceof TupleType) {
+
+            var elementTypes = (type as TupleType).type         // the list of element types
+            var linkIsNull = metaTarget.link === null
+
+            if (linkIsNull) {
+                metaTarget.link = new ArrayList<MetaData>
+            }
+            ensureHasStackMemory(metaTarget)
+            var iTargetAddr = metaTarget.address              // the stack address of the target
+
+            for (var i = 0; i < elementTypes.length; i++) {     // get each element in the tuple
+                var metaSrcElement = metaSource.link.get(i)
+                var typeElement = elementTypes.get(i)
+
+                var MetaData metaElement
+                if (linkIsNull) {                               // allocate element metaData
+                    metaElement = allocMetaAndStackForType(typeElement)     // allocate meta for the typeElement
+                    createMetaData(metaElement, typeElement, null)
+                    metaElement.address = iTargetAddr
+                    iTargetAddr        += typeElement.dataSize
+                    metaTarget.link.add(metaElement)
+
+                } else {
+
+                    metaElement = metaTarget.link.get(i)
+
+                }
+
+                // recursively assign meta data
+                assignMetaData(metaElement, metaSrcElement, typeElement, node)
+            }
+
+            metaTarget.valid.setOnlyConstant                // meta data has the newest value
+
+        } else if (type instanceof ArrayType) {
+
+            var typeArrElement = getArrayElementType(type)
+
+            if (metaTarget.valid.constant && metaSource.valid.constant) { // meta data is newest
+                // TODO: check if we need metaTarget is also newest here?
+
+                var iArrLength = convToInt(metaSource.value)
+
+                /* if the target meta data have not yet allocate element space, or
+                 * it does not have enough space to allocate all elements in the source meta data,
+                 * allocate a new `MetaData` list for the source elements.
+                 *
+                 * N.B. the new block is directly put at memoryAddr, and the possible original meta
+                 * data in the target meta data is thrown away.
+                 */
+                if ((metaTarget.link === null) || (metaTarget.value as Integer) < iArrLength) {
+                    var reg = metaTarget.register
+
+                    // use the memoryAddr to allocate the pointer of this array
+                    // this pointer points to the array body which should be in the heap space.
+                    // TODO: check if memoryAddr is the stack pointer
+                    loadImmToReg(strToGPR(reg), memoryAddr)
+
+                    //metaTarget.valid.setConAndReg
+                    metaTarget.value = iArrLength
+
+                    // Allocate memory for the array
+                    var addr = memoryAddr + Serializer.INT_SIZE
+                    var size = dataSize(typeArrElement)
+
+                    // TODO: in the current implementation, the following line seems unnecessary
+                    // since the array body is in the heap space.
+                    memoryAddr = addr + iArrLength * size
+
+                    // Create a `MetaData` list to allocate the array elements
+                    metaTarget.link = new ArrayList<MetaData>
+
+                    for (sourceElementMeta : metaSource.link) {
+
+                        var elementMeta = allocMetaAndStackForType(typeArrElement)
+                        createMetaData(elementMeta, typeArrElement, null)
+                        /* in this implementation, the meta data is not stored in the heap
+                         * the stack and the heap are mixed
+                         * TODO: change it to use a unified memory model
+                         * TODO: is it possible to not allocate a memory for the meta data?
+                         *  in this way, no stack or heap allocation is required.
+                         */
+                        elementMeta.address = addr
+                        addr += size
+
+                        assignMetaData(elementMeta, sourceElementMeta, typeArrElement, node)
+
+                        metaTarget.link.add(elementMeta)    // append this metadata
+                    }
+
+                } else {
+
+                    // target[0:iArrLength] = src[0:iArrLength]
+                    for (var i = 0; i < iArrLength; i++) {
+                        assignMetaData(metaTarget.link.get(i), metaSource.link.get(i),
+                                       typeArrElement, node)
+                    }
+
+                    var numberOfExtraMetaData = (metaTarget.value as Integer) - iArrLength
+
+                    // remove target[iArrLength:-1]
+                    for (var i = 0; i < numberOfExtraMetaData; i++) {
+                        metaTarget.link.remove(iArrLength)
+                    }
+
+                    metaTarget.value = metaSource.value     // update the target array length
+                }
+
+                metaTarget.valid.constant = true        // why not setOnlyConstant?
+
+            } else {    // meta data is not newest
+
+                // write back all registers to memory at first
+                flushAllRegsToMem()
+
+                metaTarget.storeToMem           // write the data in the target back to memory
+                metaSource.storeToMem           // write the data in the source back to memory
+
+                // create a new meta data with the same type as the target meta data
+                var metaTmpTarget = allocMetaAndStackForType(metaTarget.type)
+                var regTmpTarget = metaTmpTarget.register
+
+                // load target meta data address to `regTmpTarget`
+                loadImmToReg(strToGPR(regTmpTarget), metaTarget.address)
+
+                // create a new meta data with the same type as the source meta data
+                var metaTmpSource = allocMetaAndStackForType(metaSource.type)
+                var regTmpSource = metaTmpSource.register
+
+                // load source meta data address to `regTmpSource`
+                loadImmToReg(strToGPR(regTmpSource), metaSource.address)
+
+                assignDataInMem(metaTmpTarget, metaTmpSource)
+
+                metaTarget.valid.setOnlyMem
+            }
+
+        } else if (type instanceof QubitType || type instanceof FunctionType) {
+
+            metaTarget.reg = metaSource.reg
+
+        } else { // normal assignment
+
+            if (metaTarget.type instanceof PointerType) {
+                // NOTE: this is not a pure process copying the pointer.
+                // Instead, it stores the content in the regSource to the memory location pointed to by regTarget
+                var regSource = metaSource.register
+                var regTarget = metaTarget.register
+                var iOffset = metaTarget.value as Integer
+                storeRegToMem(metaSource.type, regSource, iOffset, regTarget)
+                metaTarget.valid.setOnlyReg
+                return
+            }
+
+            if (metaSource.valid.constant) {        // the newest value is in the meta data
+                metaTarget.valid.setOnlyConstant
+                metaTarget.value = metaSource.value
+                metaTarget.type  = copyQuingoType(metaSource.type)
+                return
+            } else if (metaSource.valid.mem) {      // the newest value is in the memory
+                metaSource.register                 // load the value into the register.
+            }
+
+            // why isn't there an `else` before `if`? Because the above statements would load the value to register.
+            if (metaSource.valid.reg) {             // register has the newest value
+                var regTarget = metaTarget.register
+                var regSource = metaSource.register
+                if (metaSource.type instanceof DoubleType) {
+                    genInsnFpAddRegs(regTarget, regSource, 'f0')
+                } else {
+                    genInsnMovReg(regTarget, regSource)
+                }
+                metaTarget.type = copyQuingoType(metaSource.type)
+                metaTarget.valid.setOnlyReg
+            }
+            else { // metaSource.valid === Position::NONE
+                writeInsnToFile
+                throw new IOException("[assignMetaData] undefined source value in line " + node.startLine + "!\n")
+            }
+        }
+    }
+
+    /** Copy one array in the memory to another place in the memory
+     *
+     * Args:
+     *   - metaTgtData: the meta data of the target
+     *   - metaSrcData: the meta data of the source
+     */
+    def void assignDataInMem(MetaData metaTgtData, MetaData metaSrcData) {
+
+        var regTgtDataAddr = metaTgtData.register // address of the source/target data in the memory
+        var regSrcDataAddr = metaSrcData.register // for array, it is the address of the array head
+
+        var type = metaTgtData.type
+        if (type instanceof ArrayType) {
+
+            // load the pointer to the target array body to the `regTgtArrayBodyAddr` register
+            var regTgtArrayBodyAddr = allocRegister
+            loadMemToReg(type, regTgtArrayBodyAddr, 0, regTgtDataAddr)
+
+            // load the pointer to the source array body to the `regSrcArrayBodyAddr` register
+            var regSrcArrayBodyAddr = allocRegister
+            loadMemToReg(type, regSrcArrayBodyAddr, 0, regSrcDataAddr)
+
+            // Compare the length
+            var metaSrcArrayLength = allocMetaAndStackForType(QuingoIntType)
+            var regSrcArrayLength  = metaSrcArrayLength.register
+
+            // load the source array length to `regSrcArrayLength`
+            loadMemToReg(type, regSrcArrayLength, 0, regSrcArrayBodyAddr)
+
+            var metaTgtArrayLength = allocMetaAndStackForType(QuingoIntType)
+            var regTgtArrayLength  = metaTgtArrayLength.register
+
+            // load the target array length to `regTgtArrayLength`
+            loadMemToReg(type, regTgtArrayLength, 0, regTgtArrayBodyAddr)
+
+
+            var k = arrayIndex++
+            var ArrayAllocLabel = "ARRAY_ALLOC_" + k + "_END"
+
+            /** compare source array length and target array length */
+            genInsnGotoLabelUponCmp(regSrcArrayLength, '<=', regTgtArrayLength, ArrayAllocLabel)
+
+            /** Start of action region if src_array_length > target_array_length
+             *
+             * Locate the target array body at the top of the heap.
+             *  - This is done by putting the heap head (r2) to regTgtArrayBodyAddr.
+             */
+             loadHeapPtrToReg(regTgtArrayBodyAddr)
+
+            // The array head points to the array body (the heap top)
+            storeRegToMem('r2', 0, regTgtDataAddr)
+            allocHeapForArrayBody(type.ptype, metaSrcArrayLength)
+            /** N.B. this is not the end of action region if src_array_length > target_array_length
+             *  The following instructions are the following actions.
+             */
+
+
+            /** Now, we are sure that the target array has enough space to contain all elements
+             * in the source array.
+             */
+            genQasmLabel(ArrayAllocLabel)
+
+            // replace the old target array length with the source array length
+            storeRegToMem(regSrcArrayLength, 0, regTgtArrayBodyAddr)
+
+            /** The first element of the array is stored after the length in the body, i.e.
+             *   `ele_addr = body_addr + INT_SIZE [= size(length)]`
+             */
+            var metaSrcElement = allocMetaAndStackForType(type.ptype)       // for the source
+            var regSrcElementAddr = metaSrcElement.register
+
+            genInsnAddConst(regSrcElementAddr, regSrcArrayBodyAddr, Serializer.INT_SIZE)
+
+            var metaTgtElement = allocMetaAndStackForType(type.ptype)       // for the target
+            var regTgtElementAddr = metaTgtElement.register
+            genInsnAddConst(regTgtElementAddr, regTgtArrayBodyAddr, Serializer.INT_SIZE)
+
+
+            // allocate a internal variable serving as the index to iterate over the array
+            var metaIndex = allocMetaAndStackForType(QuingoIntType)
+            var regIndex = metaIndex.register
+            genInsnResetRegToZero(regIndex)
+
+
+            // while (regIndex < regSrcArrayLength) do:
+            var labelArrayLoopStart = genArrStartLabel(k)    // "ARRAY_" + k
+            var labelArrayLoopEnd   = genArrEndLabel(k) // "ARRAY_" + k + "_end"
+            genQasmLabel(labelArrayLoopStart)
+
+            // compare index and src_array_length
+            // exit the loop when !(index < src_array_length)
+            genInsnGotoLabelUponCmp(regIndex, '>=', regSrcArrayLength, labelArrayLoopEnd)
+
+            // recursively assign data in memory
+            assignDataInMem(metaTgtElement, metaSrcElement)
+
+            // update the index
+            regIndex = metaIndex.register
+            genInsnAddConst(regIndex, 1)
+            // unconditionally jump back to the loop start after one iteration
+            insertQasmGoto(labelArrayLoopStart)
+            // end while (regIndex < regSrcArrayLength)
+
+            // add loop exit label
+            genQasmLabel(labelArrayLoopEnd)
+
+        } else {    // for non-array values
+            // TODO: what if tuple? check if it is a bug for tuples.
+
+            var regValue = allocRegister(type)
+
+            // load the value to the `regValue` register
+            loadMemToReg(type, regValue, 0, regSrcDataAddr)
+
+            // store value in `regValue` register to the target address
+            storeRegToMem(type, regValue, 0, regTgtDataAddr)
+        }
+
+        // Advance the pointers
+        // TODO: check, why the pointers are advanced?
+        var iNumOfBytes = dataSize(type)
+        genInsnAddConst(regSrcDataAddr, iNumOfBytes)
+        genInsnAddConst(regTgtDataAddr, iNumOfBytes)
+    }
+
+
+    def storeToMem(HashMap<String, MetaData> map) {
+        genQasmComment('Start storing all variables to the memory')
+        for (meta: map.values) {
+            if (!(meta.type instanceof QubitType) && meta.valid.atLeastOne) {
+                meta.storeToMem
+            }
+        }
+        genQasmComment('Finished storing all variables to the memory')
+    }
+
+    /**
+     * Store a variable with the name `strVarName` to the memory.
+     *
+     * If this variable cannot be found in the `map`, no action will be taken.
+     */
+    def storeToMem(String strVarName, HashMap<String, MetaData> map, Boolean onlyMem) {
+        map.get(strVarName)?.storeToMem(onlyMem)
+    }
+
+    def void storeToMem(MetaData meta) {
+    	meta.storeToMem(true)
+    }
+    /**
+     * Store the data back into the corresponding memory space
+     *
+     * Parameters:
+     *  - `meta`: the meta data to store
+     *  - `onlyMem`: whether set valid to onlyMem
+     */
+    def void storeToMem(MetaData meta, Boolean onlyMem) {
+        var link = meta.link
+        var valid = meta.valid
+
+        if (meta.type instanceof QubitType) { return }  // skip qubit type
+
+        if (meta.valid.mem) {                           // data is already in the memory, skip
+            valid.setOnlyMem
+            return
+        }
+
+        ensureHasStackMemory(meta)
+        var iDataStackAddr = meta.address            // get the address field in the meta data
+
+        if (valid.constant) {           // this is a static node
+            /* The value of this variable is stored in the corresponding meta data
+             * To store this value into the memory, two steps are required:
+             *  1. load the value into a register;
+             *  2. upload the value from the register to the corresponding memory position.
+             */
+            if (meta.type instanceof TupleType) {
+
+                // store each element in the tuple to the memory
+                for (metaTupleElement : link) { metaTupleElement.storeToMem }
+
+            } else if (meta.type instanceof ArrayType) {
+
+                // load the length of the array (immediate value) into the register regArrLength
+                var regArrLength = allocRegister()
+                loadImmToReg(strToGPR(regArrLength), meta.value as Integer,
+                            'Load the array length to the register')
+
+                var regArrayHead = meta.reg
+                if (regArrayHead == "") {
+                    regArrayHead = allocRegister()
+                    genInsnLoadArrBodyPtrToReg(meta, regArrayHead)
+                }
+
+
+                // Store the array length to memory.
+                // TODO: the length is directly written to the array head, which should be arrayBodyAddr, instead.
+                genInsnWriteArrLengthToMem(regArrLength, regArrayHead)
+
+                // Store `regArrayHead` register (pointer to the array body) to the array stack address
+                genInsnStoreArrHead(regArrayHead, iDataStackAddr)
+
+                // store each element of the array into memory recursively.
+                for (metaArrElement : link) {
+                    metaArrElement.storeToMem
+                }
+
+                meta.link = null      // clear the link
+                meta.reg  = ""
+
+            } else if (meta.type instanceof BoolType) {
+
+                var regValue = meta.value as Boolean? "r1": "r0"
+                storeRegToMem(meta.type, regValue, iDataStackAddr)
+
+            } else {  // int or double
+
+                var regValue = allocRegister(meta.type)
+
+                // Load the immediate int or float value into the `regValue` register.
+                // TODO: There might be data lose, since the data conversion `meta.value as
+                //       Integer` may ignore the fractional part.
+                // TODO: Perform a test to verify the above conclusion.
+                loadImmToReg(strToGPR(regValue), meta.value as Integer)
+
+                // Store the value into the corresponding memory.
+                storeRegToMem(meta.type, regValue, iDataStackAddr)
+            }
+
+        } else if (valid.reg) {         // this is a dynamic node
+            /* The value of this variable is stored in the register.
+             * Only one step is required to store this value into memory:
+             *  - directly upload the value from the register to the corresponding memory position.
+             */
+             storeRegToMem(meta.type, meta.reg, iDataStackAddr)
+            // TODO: what if array and tuple? their bulk data is not stored?
+            // As Jintao noted, when valid.reg is true, the elements have already been stored in memory.
+        }
+
+        // after all data is stored to the memory, modify the `valid` label accordingly.
+        if (onlyMem) {
+	        valid.setOnlyMem
+        }
+    }
+
+    /**
+     * Get the associated register of the given metadata, and ensure the register contains the newest data.
+     *
+     *  - If this metaData does not have an associated register yet, create a new one,
+     *  - Load the value to the register to ensure it has the newest value.
+     */
+    def String getRegister(MetaData meta) {
+
+        var valid = meta.valid
+
+        if (valid.reg) {        // the associated register has the newest value for the variable
+            return meta.reg     // return the associated register `reg`
+        }
+
+        if (meta.reg.equals("")) {          // no associated register yet, allocate one.
+            meta.reg = allocRegister(meta.type)
+            // println("Get a new register: " + meta.reg)
+        }
+
+        val type = meta.type
+        if (valid.constant) {
+            /** if the meta data has the newest value, load the value to the associated register */
+            if (type instanceof BoolType) {            // bool
+
+                var src = (meta.value as Boolean)? "r1": "r0"
+                genInsnMovReg(meta.reg, src)
+
+            } else if (type instanceof DoubleType) {   // float
+                var regTempTransfer = allocRegister
+                loadFpImmToReg(meta.reg, meta.value as Float, regTempTransfer)
+
+            } else if (type instanceof ArrayType) {    // array
+                var insn = loadMemToReg(meta.reg, meta.address)
+
+            } else {                                        // tuple, int
+
+                if (type instanceof TupleType) {  // TODO: check why tuple can work here.
+                    System.err.println('getRegister: assign meta.value to reg, which may be useless. Continue.')
+                }
+
+                loadImmToReg(strToGPR(meta.reg), meta.value as Integer)
+
+            }
+
+        } else if (valid.mem) {
+            var insn = loadMemToReg(type, meta.reg, meta.address)
+
+        } else {
+//            println("getRegister: Neither valid.constant or valid.mem is true for register: " + meta.reg)
+            // throw new Exception("getRegister: Information in the MetaData is broken for the register: " + meta.reg)
+
+        }
+
+        valid.reg = true
+        mapRegToMetadata.put(meta.reg, meta)
+
+        return meta.reg
+    }
+
+    // ----------------------------------------------------------------------------------
+    // end of meta data utilities
+    // ----------------------------------------------------------------------------------
+
+    /**
+     * Loads the pointer to the body of the array (`metaArray`) to the register (`regArrayBodyPtr`)
+     */
+    def genInsnLoadArrBodyPtrToReg(MetaData metaArray, String regArrayBodyPtr) {
+        /** `metaArray.address` is the stack address of the array, which stores the pointer
+         * to the array body (which should reside in the heap).
+         * As a result: reg_content[`regArrayHead`] = pointer to the array body
+         */
+        var iArrBodyAddr = metaArray.address
+        var insn = loadMemToReg(regArrayBodyPtr, iArrBodyAddr)
+        insn.setTrailingComment('load array body pointer')
+    }
+
+    def genInsnWriteArrLengthToMem(String regArrLength, String regArrayBodyPtr) {
+        /**
+         * mem_content[reg_content[`regArrayBodyPtr`]] = length of the array, i.e.,
+         *     mem_content[pointer to array body] = length of the array
+         */
+        var insn = storeRegToMem(regArrLength, 0, regArrayBodyPtr)
+        insn.setTrailingComment('write the array length to memory.')
+    }
+
+    def genInsnStoreArrHead(String regArrayHead, int iArrayAddr) {
+        var insn = storeRegToMem(regArrayHead, iArrayAddr)
+        insn.setTrailingComment('write the array head to memory.')
+    }
+
+    def genInsnStoreArrHead(MetaData metaArray, String regAddr) {
+        // this register contains the array head, i.e., the array body address.
+        var regArrHead = metaArray.register
+        // store the pointer to the array body to the address stored in the `regAddr`
+        storeRegToMem(regArrHead, 0, regAddr)
+    }
+    // ----------------------------------------------------------------------------------
+    // start of serialization
+    // ----------------------------------------------------------------------------------
+    /**
+     * Serialize the return data and put it in the shared memory.
+     *
+     * Parameters:
+     *  - `metaStackPtr`    : the pointer to the stack head.
+     *  - `metaHeapPtr`     : the pointer to the heap head, from which point on, the memory space
+     *                         is free and can be used to locate data.
+     *  - `metaDataToExport`: the meta data of the variable is to be exported
+     *  - `type`            : the `type` in which the variable is to be exported
+     */
+    def void exportMetaData(MetaData metaMockStackPtr, MetaData metaMockHeapPtr,
+                            MetaData metaDataToExport, Type type) {
+
+        var strType = convTypeToStr(type)
+        genQasmComment("start exporting: " + strType)
+
+        var iMockStackPtr = convToInt(metaMockStackPtr.value)
+        var iMockHeapPtr  = convToInt(metaMockHeapPtr.value)
+
+        // the heap data should be stored after both the stack and previously-used heap space.
+        iMockHeapPtr          = Math.max(iMockHeapPtr, iMockStackPtr + dataSize(type))
+        metaMockHeapPtr.value = iMockHeapPtr
+
+        if (type instanceof TupleType) {            // Tuple
+
+            // meta data for this tuple?
+            var metaTmpStackPtr   = new MetaData
+            metaTmpStackPtr.type  = new PointerType
+            metaTmpStackPtr.value = metaMockStackPtr.value   // pointer offset
+            var regTmpStackPtr    = metaTmpStackPtr.register
+
+            /** valid.reg == true && valid.constant == false:
+             * the final destination is offset + base address
+             */
+            metaTmpStackPtr.valid.setOnlyReg                  // pointer base address
+            loadImmToReg(strToGPR(regTmpStackPtr), Configuration.sharedAddr,
+                         'load sharedAddr to the base register: ' + regTmpStackPtr)
+
+            var elementTypes = (type as TupleType).type
+            for (var i = 0; i < elementTypes.length; i++) { // recursively export each element
+
+                var curElementType     = elementTypes.get(i)
+                var curElementTypeSize = dataSize(elementTypes.get(i))
+                var curElement         = metaDataToExport.link.get(i)
+
+                exportMetaData(metaTmpStackPtr, metaMockHeapPtr, curElement, curElementType)
+
+                // After one element is exported, it occupies the export stack space. Hence,
+                //   the mock stack head should move forward.
+                metaTmpStackPtr.value = convToInt(metaTmpStackPtr.value) + curElementTypeSize
+            }
+
+        } else if (type instanceof ArrayType) {     // Array
+
+            var typeArrElement  = getArrayElementType(type)
+            var iSizeArrElement = dataSize(typeArrElement)
+
+            if (metaDataToExport.valid.constant) {  // the length of the array is known
+
+                // Store the offset to the newly allocated register
+                var regOffset = allocRegister
+                var offset    = iMockHeapPtr - iMockStackPtr // = array body address - array pointer address
+                loadImmToReg(strToGPR(regOffset), offset, "load offset (array body <-> head)")
+
+                // TODO:Jintao: why the write address is iMockStackPtr + regStackPtr?
+                // it seems iMockStackPtr and iMockHeapPtr are both relative addresses
+                var regStackPtr = metaMockStackPtr.register
+
+                var insn = storeRegToMem(regOffset, iMockStackPtr, regStackPtr)
+                insn.setTrailingComment('Store array offset to memory address: regStackPtr + iMockStackPtr (' + iMockStackPtr + ')')
+
+                // Store the length to the heap
+                var length = metaDataToExport.value as Integer
+
+                loadImmToReg(strToGPR(regOffset), length, 'store the array length (' + length + ') to the reg')
+
+                insn = storeRegToMem(regOffset, iMockHeapPtr, regStackPtr)
+                insn.setTrailingComment('Store the length to memory address: regStackPtr + iMockHeapPtr (' +
+                                         iMockHeapPtr + ')')
+
+                // update the tmp stack pointer for every element
+                var metaTmpStackPtr   = new MetaData
+                metaTmpStackPtr.type  = new PointerType
+                metaTmpStackPtr.value = iMockHeapPtr + Serializer.INT_SIZE
+                var regTmpStackPtr    = metaTmpStackPtr.register
+                metaTmpStackPtr.valid.setOnlyReg
+
+                loadImmToReg(strToGPR(regTmpStackPtr), Configuration.sharedAddr)
+
+                metaMockHeapPtr.value = iMockHeapPtr + Serializer.INT_SIZE + length * iSizeArrElement
+
+                for (member : metaDataToExport.link) {
+                    exportMetaData(metaTmpStackPtr, metaMockHeapPtr, member, typeArrElement)
+                    metaTmpStackPtr.value = (metaTmpStackPtr.value as Integer) + iSizeArrElement
+                }
+
+            } else {                    // the length of the array is unknown
+
+                // flush all registers by storing the data back into the correct memory space
+                flushAllRegsToMem()
+                mapRegToMetadata.clear
+
+                genQasmComment('exporting array: ensure all variables to export are in the memory')
+                metaDataToExport.storeToMem
+                genQasmComment('exporting array: end of ensure all variables to export are in the memory')
+
+                var regMockStackPtr = metaMockStackPtr.register
+
+                var insn = genInsnAddConst(regMockStackPtr, iMockStackPtr)
+                insn.setTrailingComment('update the mock stack ptr (' + regMockStackPtr + '): with an offset iMockStackPtr (' + iMockStackPtr + ')')
+
+                var regMockHeapPtr = metaMockHeapPtr.register
+
+                genInsnAddConst(regMockHeapPtr, iMockHeapPtr)
+                insn.setTrailingComment('update the mock heap ptr (' + regMockHeapPtr + '): with an offset iMockHeapPtr (' + iMockHeapPtr + ')' )
+
+                // Since the original meta data can distribute over the memory, a new meta data `metaExported` is
+                // created to allocated for the exported data, which is aligned in the shared memory
+                var metaExported = allocMetaAndStackForType(metaDataToExport.type)
+                var regExported  = metaExported.register
+                loadImmToReg(strToGPR(regExported), metaDataToExport.address)
+
+                mapRegToMetadata.put(regMockStackPtr, metaMockStackPtr)
+                mapRegToMetadata.put(regMockHeapPtr,  metaMockHeapPtr)
+                mapRegToMetadata.put(regExported,     metaExported)
+                exportMetaData(regMockStackPtr, regMockHeapPtr, regExported, type)
+
+                // Remove the offset from the pointer register
+                genInsnAddConst(regMockStackPtr, -convToInt(metaMockStackPtr.value))
+                metaMockStackPtr.valid.setOnlyReg
+
+                genInsnAddConst(regMockHeapPtr, -convToInt(metaMockHeapPtr.value))
+                metaMockHeapPtr.valid.setOnlyReg
+            }
+
+        } else if (type instanceof BoolType) {
+
+            var String regBoolValue
+            if (metaDataToExport.valid.constant) {      // r1, r0 are constantly 1 and 0, respectively.
+                regBoolValue = (metaDataToExport.value as Boolean)? "r1": "r0"
+            } else {
+                regBoolValue = metaDataToExport.register
+            }
+
+            var regMockStackPtr = metaMockStackPtr.register
+            storeRegToMem(type, regBoolValue, iMockStackPtr, regMockStackPtr)
+
+        } else if (type instanceof DoubleType) {
+
+            var regTempTransfer = allocRegister
+            if (metaDataToExport.valid.constant) {
+                loadImmToReg(strToGPR(regTempTransfer), Float.floatToIntBits(metaDataToExport.value as Float))
+
+            } else if (metaDataToExport.valid.reg) {
+
+                var fregDataToExport = metaDataToExport.reg
+                moveFprToGpr(regTempTransfer, fregDataToExport)
+
+            } else {
+                loadMemToReg(type, regTempTransfer, metaDataToExport.address)
+            }
+
+            var regMockStackPtr = metaMockStackPtr.register
+            /**
+             * TODO: it is related to float-int conversion. Directly using the storeRegToMem function will lead to
+             * a bug. Think about which instruction should be used later.
+             * Now I have changed it. See this can work or not.
+             */
+            // storeRegToMem(type, regTempTransfer, iMockStackPtr, regMockStackPtr)
+            storeRegToMem(regTempTransfer, iMockStackPtr, regMockStackPtr)
+        } else {
+
+            var regDataToExport = metaDataToExport.register
+            var regMockStackPtr = metaMockStackPtr.register
+            storeRegToMem(type, regDataToExport, iMockStackPtr, regMockStackPtr)
+        }
+        genQasmComment("Finished exporting: " + strType)
+    }
+
+    /**
+     * Export data structures that stored in the memory
+     * taddr: current address to be written
+     * faddr: the starting address that is metaHeapPtr
+     * raddr: the address of the to-be-exported data
+     */
+    def void exportMetaData(String regMockStackPtr, String regMockHeapPtr,
+                            String regDataToExport, Type type) {
+
+        // regMockHeapPtr = max(regMockHeapPtr, regMockStackPtr + dataSize)
+        var temp = getFreeGpr
+        genInsnAddConst(temp, regMockStackPtr, dataSize(type))
+
+        var k = arrayIndex++
+        var strHeapLabel = "UPDATE_FADDR_" + k
+        genInsnGotoLabelUponCmp(regMockHeapPtr, '>=', temp, strHeapLabel)
+
+        // update the mock heap pointer
+        genInsnMovReg(regMockHeapPtr, temp)
+
+        genQasmLabel(strHeapLabel)
+
+        if (type instanceof TupleType) {
+            var ttype = (type as TupleType).type
+            for (ele : ttype) {
+                exportMetaData(regMockStackPtr, regMockHeapPtr, regDataToExport, ele)
+                genInsnAddConst(regMockStackPtr, dataSize(ele))
+                genInsnAddConst(regDataToExport, dataSize(ele))
+            }
+
+        } else if (type instanceof ArrayType) {
+            genInsnForArith(temp, regMockHeapPtr, '-', regMockStackPtr)
+            storeRegToMem(type, temp, 0, regMockStackPtr)
+
+            var rarray = getFreeGpr
+            loadMemToReg(type, rarray, 0, regDataToExport)
+
+            var length = getFreeGpr
+            loadMemToReg(length, 0, rarray)
+
+            storeRegToMem(length, 0, regMockHeapPtr)
+
+            // Update the pointers
+            var tarray = getFreeGpr
+            genInsnAddConst(tarray, regMockHeapPtr, Serializer.INT_SIZE)
+
+            genInsnAddConst(rarray, Serializer.INT_SIZE)
+
+            var ptype = getArrayElementType(type) // (type as ArrayType).ptype
+            var psize = dataSize(ptype)
+            loadImmToReg(strToGPR(temp), psize)
+
+            genInsnMulRegs(temp, temp, length)
+
+            genInsnAddRegs(regMockHeapPtr, regMockHeapPtr, temp)
+
+            genInsnAddConst(regMockHeapPtr, Serializer.INT_SIZE)
+
+            genInsnResetRegToZero(temp)
+
+            val strArrLabel = genArrStartLabel(k)
+            val strArrEndLabel = genArrEndLabel(k)
+            genQasmLabel(strArrLabel)
+
+            genInsnGotoLabelUponCmp(temp, '>=', length, strArrEndLabel)
+
+            exportMetaData(tarray, regMockHeapPtr, rarray, ptype)
+            genInsnAddConst(tarray, psize)
+            genInsnAddConst(rarray, psize)
+
+
+            genInsnAddConst(temp, 1)    // index = index + 1
+
+            insertQasmGoto(strArrLabel)
+            genQasmLabel(strArrEndLabel)
+
+        } else {
+
+            loadMemToReg (type, temp, 0, regDataToExport)
+            storeRegToMem(type, temp, 0, regMockStackPtr)
+        }
+    }
+    // ----------------------------------------------------------------------------------
+    // end of serialization
+    // ----------------------------------------------------------------------------------
+
+    // ----------------------------------------------------------------------------------
+    // start of the eQASM instruction region
+    // ----------------------------------------------------------------------------------
+    static val r0 = new GPR(0)
+    static val r1 = new GPR(1)
+    static val r2 = new GPR(2)
+    static val f0 = new FPR(0)
+
+
+    def genInsnForWhileHead(Expression expCondition, String whileStartLabel,
+                            String whileEndLabel, HashMap<String, MetaData> map) {
+        // generate a start label for the while loop
+        genQasmLabel(whileStartLabel)
+
+        // generate instructions which evaluates the while condition
+        // with the while condition result written into the `reg` register
+        var metaCondResult = expCondition.compile(map)
+        var regCondRes = metaCondResult.register
+        // if the result is not true (1), goto while end label (skip the while body)
+        var insn = gotoLabelIfNotEqual(regCondRes, 'r1', whileEndLabel)
+        // var insn = addEqasmBne(regCondRes, 'r1', whileEndLabel)
+        insn.setTrailingComment("skip the while body if condition not satisfied.")
+    }
+
+    def genInsnForWhileBody(BlockStatement whileBody, HashSet<String> setVarNames,
+                            HashMap<String, MetaData> map) {
+        whileBody.compile(map)
+        storeVarsToMem(setVarNames, map, true)
+    }
+
+    def genInsnForWhileTail(String whileStartLabel, String whileEndLabel) {
+        // unconditionally jump back to the loop start to evaluate the while condition
+        insertQasmGoto(whileStartLabel)
+
+        // add the while end label after the entire while body
+        genQasmLabel(whileEndLabel)
+    }
+
+    def loadHeapPtrToReg(String regTarget) {
+        var insn = genInsnMovReg(regTarget, 'r2')
+        insn.setTrailingComment('load heap pointer')
+    }
+
+    def flushAllRegsToMem() {
+        genQasmComment('Clean the registers')
+        for (m : mapRegToMetadata.values) { m.storeToMem }
+        genQasmComment('End of register clean')
+    }
+
+    def storeVarsToMem(HashSet<String> setVarNames, HashMap<String, MetaData> map, Boolean onlyMem) {
+        // genQasmComment("storeToMem starts")
+
+        for (variable: setVarNames) {
+            variable.storeToMem(map, onlyMem)
+        }
+
+        // genQasmComment("storeToMem finishes")
+    }
+
+    def jumpBackToLoopStart(int index) {
+        var loopStartLabel = genLoopStartLabel(index)
+        insertQasmGoto(loopStartLabel)
+    }
+
+    def jumpToFunctionEnd(int index) {
+        var funcEndLabel = genFuncEndLabel(index)
+        insertQasmGoto(funcEndLabel)
+    }
+
+    def jumpToLoopEnd(int index) {
+        var loopEndLabel = genLoopEndLabel(index)
+        insertQasmGoto(loopEndLabel)
+    }
+
+    def genOpNameWithParam(String opName, Float param) {
+        var Float absParam
+        var String mSign
+        if (param >= 0) {
+            mSign = ''
+            absParam = param
+        } else {
+            mSign = 'm'
+            absParam = -param
+        }
+
+        return opName + mSign + absParam.toString.replace('.', '_')
+    }
+
+    def genInsnForMsmt(String MsmtEqasmName, String regQotrs, int iMsmtDuration) {
+        genInsnSQOperation(1, MsmtEqasmName, regQotrs)
+        genInsnWait(iMsmtDuration - 3)
+        genInsnWait(1)
+        genInsnWait(1)
+        genInsnWait(1)
+
+        var regMsmtRes = allocRegister
+        genInsnFetchMsmtRes(regMsmtRes, regQotrs.replace('s', 'q'))
+
+        var metaMsmtRes = new MetaData(regMsmtRes)
+        metaMsmtRes.valid.setOnlyReg
+        metaMsmtRes.type = QuingoBoolType
+        return metaMsmtRes
+    }
+
+    def genInsnWait(MetaData metaWaitTime) {
+        if (metaWaitTime.valid.constant) {      // if the waiting time is already known
+            val immWaitTime = metaWaitTime.value as Integer
+            genInsnWait(immWaitTime)
+        } else {                                // otherwise, in the register (int-type meta)
+            var reg = metaWaitTime.register
+            genInsnWait(reg)
+        }
+    }
+
+    // TODO: remove this function
+    def genInsnWaitBasedInit(FunDeclaration fun) {
+        // TODO: this `init` implementation assumes a wait-based scheme,
+        // which is not read from the configuration. Wierd.
+
+        val OpDuration = fetchConfig(fun, fun.name, "duration") as Integer
+        genInsnWait(OpDuration)
+    }
+
+    // ----------------------------------------------------------------------------------
+    // end of the eQASM instruction region
+    // ----------------------------------------------------------------------------------
+
+    // ----------------------------------------------------------------------------------
+    // start of various labels
+    // ----------------------------------------------------------------------------------
+
+    def genFuncEndLabel(int index) {
+        return "function_" + index + "_end"
+    }
+
+    def genLoopStartLabel(int index) {
+        return "labelwhile_" + index
+    }
+
+    def genLoopEndLabel(int index) {
+        return "continue_" + index
+    }
+
+    def genIfElseLabel(int index) {
+        return "ne_path_" + index
+    }
+
+    def genIfEndLabel(int index) {
+        return "if_" + index + "_end"
+    }
+
+    def genArrStartLabel(int index) {
+        return "ARRAY_" + index
+    }
+    def genArrEndLabel(int index) {
+        return "ARRAY_" + index + "_END"
+    }
+
+    def genCaseStartLabel(int switch_index, int case_index) {
+        return "switch_" + switch_index + "_" + case_index
+    }
+
+    def genCaseEndLabel(int switch_index, int case_index) {
+        return "switch_" + switch_index + "_" + case_index + "_end"
+    }
+
+    // ----------------------------------------------------------------------------------
+    // end of various labels
+    // ----------------------------------------------------------------------------------
+
+    // ----------------------------------------------------------------------------------
+    // Utilities
+    // ----------------------------------------------------------------------------------
+    def getQuingoTypeOfExpr(Expression expr) {
+        return xsemantics.exptype(expr).value
+    }
+
+    def copyQuingoType(Type type) {
+        // Maybe `type` can be directly returned.
+        // However, Jintao found this can introduce some bug in some cases, which cases cannot be found now.
+        return xsemantics.copytype(type).value
+    }
+
+    def writeInsnToFile() {
+        writeInsnToFile(fsaGlobal, fileName)
+    }
+
+    def getSizeArrLength() {
+        return Serializer.INT_SIZE
+    }
+
+    def convToInt(Object value) {
+        return (value as Integer).intValue
+    }
+
+    def getArrayElementType(Type type) {
+        return (type as ArrayType).ptype
+    }
+
+    def fetchConfig(EObject e, String item, String field) {
+        var opaque = config.get(item)
+        if (opaque === null) {
+            throw new IOException("[fetchConfig] Cannot find the configuration for " + item)
+        }
+        for (sec: opaque.field) {
+            if (sec.name.equals(field)) {
+                return sec.value.string ?: sec.value.inti / 20
+            }
+        }
+    }
+
+    def printNode(ICompositeNode node) {
+        // println("current statement node:   " + node.getText.strip)
+    }
+
+    def String convTypeToStr(Type type) {
+
+        if (type instanceof IntType) { return 'int' }
+
+        if (type instanceof BoolType) { return 'bool' }
+
+        if (type instanceof DoubleType) { return 'double'}
+
+        if (type instanceof TupleType) {
+            var elementTypes = (type as TupleType).type
+            var strElements = String.join(',', elementTypes.map[convTypeToStr(it)])
+            return '(' + strElements + ')'
+        }
+
+        if (type instanceof ArrayType) { return convTypeToStr(getArrayElementType(type)) + '[]' }
+
+        throw new Exception('Found an unsupported type.')
+    }
+
+    /**
+     * Read the integer value from its string representation `intStr`.
+     */
+    def intFromString(String intStr) {
+        try {
+            val Integer intValue = new Integer(intStr)
+            return intValue
+        } catch(Exception e) {
+            var errMsg = String.format(
+                "Error happens while coverting the following string into an integer: %s", intStr)
+            System.err.println(errMsg)
+            e.printStackTrace()
+            throw new Exception(errMsg)
+        }
+    }
+
+	def Boolean containBreakOrContinue(BlockStatement block) {
+		for (stat: block.stats) {
+			if (stat instanceof BreakStatement) {
+				return true
 			}
-		}
-		
-		for (fun : resource.allContents.toIterable.filter(FunDeclaration)) {
-			if (fun.name.equals("main")) {
-	        	output += "XOR r0, r0, r0\n"
-	        	output += "ADDI r1, r0, 1\n"
-	        	valueToReg("r2", Configuration.dynamicAddr)
-	        	output += "SW r0, " + Configuration.staticAddr + "(r0)\n"
-	        	output += "FCVT.S.W f0, r0\n"
-	        	
-	        	if (vscode) {
-					System.err.println("input: " + resource.URI);
-					for (res : resourceSet.resources) {
-						System.err.println("Resource set: " + res.URI);
-					}
-	        	}
-
-				if (Configuration.outputFile != "") {
-					fileName = Configuration.outputFile
+			else if (stat instanceof ContinueStatement) {
+				return true
+			}
+			else if (stat instanceof BlockStatement) {
+				if (stat.containBreakOrContinue) {
+					return true
 				}
-				else {
-					fileName = "build/" + resource.URI.trimFileExtension.lastSegment + ".eqasm"
-				}
-				try {
-			        var map = new HashMap<String, MetaData>
-			        for (par: fun.pars) { 
-			        	par.compile(map)
-			        }
-			        fun.block?.compile(map)
-				}
-				catch (Exception e) {
-					System.err.println(e + ", reported by line " + e.getStackTrace.get(0).getLineNumber)
-					Configuration.exitCode = -6
-				}
-				output += "function_null_end:\n"
-				output += "STOP\n"
-				writeFile
 			}
-		}
-	}
-
-    def dispatch MetaData compile(FormalParameter stat, HashMap<String, MetaData> map) {
-		while (map.containsKey(stat.name)) {
-			stat.name = stat.name + "-2";
-		}
-		return allocateRegister(stat.name, stat.type, map)
-	}
-	
-	def dispatch MetaData compile(LocalVarDecl stat, HashMap<String, MetaData> map) {
-		for (init: stat.init) {
-			init.compile(map)
-		}
-		return null
-	}
-	
-	def dispatch MetaData compile(VariableInit variable, HashMap<String, MetaData> map) {
-		var varName = variable.varName
-		while (map.containsKey(varName.name)) {
-			varName.name = varName.name + "-2";
-		}
-		var type = (variable.eContainer as LocalVarDecl).type
-		var meta = allocateRegister(varName.name, type, map)
-		if (variable.value !== null) {
-			assignMetaData(meta, variable.value.compile(map), type, NodeModelUtils.getNode(variable))
-		}
-		return meta
-	}
-	
-	def MetaData allocateRegister(String name, Type type, HashMap<String, MetaData> map) {
-		var meta = getScalaMeta(type)
-		createMetaData(meta, type, map)
-		if (xsemantics.isQubitTypes(type) || type instanceof FunctionType) {
-			meta.type = QuingoFactory::eINSTANCE.createQubitType
-		}
-		map.put(name, meta)
-		return meta
-	}
-	
-	def void createMetaData(MetaData meta, Type type, HashMap<String, MetaData> map) {
-		if (type instanceof ArrayType) {
-			
-			// Get the actual length and ptype
-			var length = type.length
-			var ptype = type.ptype
-			while (ptype instanceof ArrayType) {
-				var temp = ptype.length
-				ptype.setLength(length)
-				length = temp
-				ptype = ptype.ptype
-			}
-
-			// Store the actual address of the array
-			var reg = meta.register
-			valueToReg(reg, memoryAddr)
-			
-			// Decide the length of the array
-			var intlen = 0
-			var const = true
-			if (length !== null) {
-				var lengMeta = length.compile(map)
-				if (lengMeta.valid.constant) {
-					intlen = (lengMeta.value as Integer).intValue
-				}
-				if (intlen >= Configuration.maxUnrolling || (meta.value instanceof Integer && (meta.value as Integer) < 0)) {
-					const = false
-					meta.valid.setOnlyReg
-					
-					// Allocate memory for the array
-					output += "ADDI " + reg + ", r2, 0\n"
-					var lreg = lengMeta.register
-					output += "SW " + lreg + ", 0(" + reg + ")\n"
-					updateFreeAddr(type.ptype, lengMeta)
-					
-					if (type.ptype instanceof ArrayType) {
-						// set initial values
-						var rshift = getNewReg
-						output += "ADDI " + rshift + ", " + reg + ", " + INT_SIZE + "\n"
-						var rindex = getNewReg
-						output += "ADDI " + rindex + ", r0, 0\n" // rindex = 0
-						
-						// while (i<length) {
-						var label = arrayIndex++
-						output += "ARRAY_" + label + ":\n"
-						var flag = getNewReg
-						lreg = lengMeta.register
-						output += "CMP " + rindex + ", " + lreg + "\nNOP\n"
-						output += "FBR LE, " + flag + "\n"
-						output += "BNE " + flag + ", r1, ARRAY_" + label + "_END\n"
-						
-						// allocate recursively
-						var cmeta = getScalaMeta(type.ptype)
-						cmeta.value = -1
-						createMetaData(cmeta, type.ptype, map)
-						var creg = cmeta.register
-						output += "SW " + creg + ", 0(" + rshift + ")\n"
-						
-						// increase the index
-						output += "ADDI " + rshift + ", " + rshift + ", " + POINTER_SIZE + "\n"
-						output += "ADDI " + rindex + ", " + rindex + ", " + 1 + "\n"
-						output += "BEQ r0, r0, ARRAY_" + label + "\n" //}
-						output += "ARRAY_" + label + "_END:\n"
-					}
+			else if (stat instanceof IfStatement) {
+				if (stat.ifStat.containBreakOrContinue || stat.elseStat?.containBreakOrContinue) {
+					return true
 				}
 			}
-			
-			if (const) {
-				meta.valid.setConAndReg
-				meta.value = intlen
-					
-				// Allocate memory for the array
-				var addr = memoryAddr + INT_SIZE
-				var size = dataSize(ptype)
-				memoryAddr = addr + intlen * size
-				
-				// Create array members
-				meta.link = new ArrayList<MetaData>
-				for (var i=0; i<intlen; i++) {
-					var cmeta = getScalaMeta(type.ptype)
-					cmeta.address = addr
-					addr += size
-					createMetaData(cmeta, type.ptype, map)
-					meta.link.add(cmeta)
-				}
-			}
-			
-			// Restore the original type
-			var atype = ptype.eContainer as ArrayType
-			while (atype !== type) {
-				var temp = atype.length
-				atype.setLength(length)
-				length = temp
-				atype = atype.eContainer as ArrayType
-			}
-			type.setLength(length)
-		}
-	}
-	
-	def MetaData allocateArray(ArrayType type, int depth, int level, HashMap<String, MetaData> map) {
-		var array = new MetaData
-		var reg = array.register
-
-		// get array's length
-		var Type ptype = type
-		for (var i=0; i<depth-level-1; i++) {
-			ptype = (ptype as ArrayType).ptype
-		}
-		var length = (ptype as ArrayType).length
-
-		// get array's type
-		ptype = type.ptype
-		for (var i=0; i<level; i++) {
-			ptype = (ptype as ArrayType).ptype
-		}
-
-		var MetaData lengMeta = null
-		if (length === null) {
-			array.value = 0
-			array.valid.setOnlyConstant
-			array.link = new ArrayList<MetaData>
-			array.address = memoryAddr
-			memoryAddr += POINTER_SIZE
-			valueToReg(reg, memoryAddr)
-			output += "SW " + reg + ", " + hex(array.address) + "(r0)\n"
-			memoryAddr += INT_SIZE
-			array.type = QuingoFactory::eINSTANCE.createArrayType
-			return array
-		}
-		else {
-			lengMeta = length.compile(map)
-
-			if (lengMeta.valid.constant) {
-				array.address = memoryAddr
-				var addr = memoryAddr + POINTER_SIZE
-				valueToReg(reg, addr)
-				output += "SW " + reg + ", " + hex(array.address) + "(r0)\n"
-				addr += INT_SIZE
-				var size = dataSize(ptype)
-				var intlen = (lengMeta.value as Integer).intValue
-				memoryAddr = addr + intlen * size
-				array.value = lengMeta.value
-				array.valid.setOnlyConstant
-				array.link = new ArrayList<MetaData>
-				array.type = QuingoFactory::eINSTANCE.createArrayType
-				for (var i=0; i<intlen; i++) {
-					var MetaData meta
-					if (ptype instanceof ArrayType) {
-						meta = allocateArray(type, depth, level + 1, map)
-					}
-					else {
-						//meta = createMetaData(ptype, map)
-					}
-					meta.address = addr
-					addr += size
-					array.link.add(meta)
-				}
-			}
-			else if (ptype instanceof ArrayType) {
-				array.valid.reg = true
-				array.type = QuingoFactory::eINSTANCE.createArrayType
-
-				output += "ADDI " + reg + ", r2, 0\n"
-				var lreg = lengMeta.register
-				output += "SW " + lreg + ", 0(" + reg + ")\n"
-				updateFreeAddr(ptype, lengMeta)
-				
-				// set initial values
-				var rshift = getNewReg
-				output += "ADDI " + rshift + ", " + reg + ", " + INT_SIZE + "\n"
-				var rindex = getNewReg
-				output += "ADDI " + rindex + ", r0, 0\n" // rindex = 0
-				
-				// while (i<length) {
-				var label = arrayIndex++
-				output += "ARRAY_" + label + ":\n"
-				var flag = getNewReg
-				lreg = lengMeta.register
-				output += "CMP " + rindex + ", " + lreg + "\nNOP\n"
-				output += "FBR LE, " + flag + "\n"
-				output += "BNE " + flag + ", r1, ARRAY_" + label + "_END\n"
-				
-				// allocate recursively
-				var lmeta = allocateArray(type, depth, level + 1, map)
-				output += "SW " + lmeta.reg + ", 0(" + rshift + ")\n"
-				
-				// increase the index
-				output += "ADDI " + rshift + ", " + rshift + ", " + POINTER_SIZE + "\n"
-				output += "ADDI " + rindex + ", " + rindex + ", " + 1 + "\n"
-				output += "BEQ r0, r0, ARRAY_" + label + "\n" //}
-				output += "ARRAY_" + label + "_END:\n"
-			}
-		}
-
-		return array
-	}
-	
-	def void updateFreeAddr(Type type, MetaData lengMeta) {
-		var size = dataSize(type)
-		if (lengMeta.valid.constant) {
-			var length = (lengMeta.value as Integer).intValue * size + INT_SIZE
-			output += "ADDI r2, r2, " + length + "\n" // r2 += length
-			return
-		}
-		var lreg = lengMeta.register
-		if (size === 1) {
-			output += "ADD r2, r2, " + lreg + "\n" // r2 += length
-		}
-		else {
-			var rlength = getNewReg
-			valueToReg(rlength, size) // length = single
-			output += "MUL " + rlength + ", " + rlength + ", " + lreg + "\n" // length = single*num
-			output += "ADD r2, r2, " + rlength + "\n" // r2 += length
-		}
-		output += "ADDI r2, r2, " + INT_SIZE + "\n" // 4 bytes are used for storing the length
-	}
-	
-	def dispatch MetaData compile(BlockStatement stat, HashMap<String, MetaData> map) {
-		if (stat.stats !== null) {
-			for (st: stat.stats) {
-				var meta = st.compile(map)
-				if (meta !== null) {
-					return meta
+			else if (stat instanceof UsingStatement) {
+				if (stat.block.containBreakOrContinue) {
+					return true
 				}
 			}
 		}
-		return null
-	}
-	
-	def dispatch MetaData compile(WaitStatement stat, HashMap<String, MetaData> map) {
-		var meta = stat.lis.get(stat.lis.length - 1).compile(map)
-		if (meta.valid.constant) {
-			output += "QWAIT " + meta.value + "\n"
-		}
-		else {
-			var reg = meta.register
-			output += "QWAITR " + reg + "\n"
-		}
-		return null
-	}
-	
-	def dispatch MetaData compile(ReturnStatement stat, HashMap<String, MetaData> map) {
-		var container = stat.eContainer
-		while (!(container instanceof FunDeclaration)) {
-			container = container.eContainer
-		}
-		var MetaData rmeta = null
-		if (stat.value !== null) {
-			rmeta = stat.value.compile(map)
-			var fun = container as FunDeclaration
-			if (fun.name.equals("main")) {
-				var ptr = new MetaData
-				ptr.type = new PointerType
-				ptr.value = 0
-				var reg = ptr.register
-				ptr.valid.setOnlyReg
-				valueToReg(reg, Configuration.sharedAddr)
-				
-				var free = new MetaData
-				free.type = new PointerType
-				free.value = 0
-				var rfree = free.register
-				valueToReg(rfree, Configuration.sharedAddr)
-				free.valid.setOnlyReg
-				exportMetaData(ptr, free, rmeta, fun.type)
-			}
-			else {
-				if (!(fun.type instanceof UnitType)) {
-					var ret = map.get("return")
-					assignMetaData(ret, rmeta, fun.type, NodeModelUtils.getNode(stat))
-				}
-			}
-		}
-		else {
-			rmeta = new MetaData
-		}
-		var index = indexMap.get(container)
-		output += "BEQ r0, r0, function_" + index + "_end\n"
-		return rmeta
-	}
-	
-	def void exportMetaData(MetaData ptr, MetaData free, MetaData meta, Type type) {
-		var intValue = (ptr.value as Integer).intValue
-		var freeValue = (free.value as Integer).intValue
-		freeValue = Math.max(freeValue, intValue + dataSize(type))
-		free.value = freeValue
-		var op = storeOp(type)
-		
-		if (type instanceof TupleType) {
-			var ttype = (type as TupleType).type
-			for (var i=0; i<ttype.length; i++) {
-				exportMetaData(ptr, free, meta.link.get(i), ttype.get(i))
-				ptr.value = (ptr.value as Integer).intValue + dataSize(ttype.get(i))
-			}
-		}
-		else if (type instanceof ArrayType) {
-			var ptype = (type as ArrayType).ptype
-			var psize = dataSize(ptype)
-			if (meta.valid.constant) {
-				// Store the offset
-				var reg = getNewReg
-				valueToReg(reg, freeValue - intValue)
-				var preg = ptr.register
-				output += "SW " + reg + ", " + intValue + "(" + preg + ")\n"
-
-				// Store the length
-				var length = meta.value as Integer
-				valueToReg(reg, length)
-				output += "SW " + reg + ", " + freeValue + "(" + preg + ")\n"
-				
-				// Update the pointers
-				ptr.value = freeValue + INT_SIZE
-				free.value = freeValue + length * psize
-				
-				for (member : meta.link) {
-					exportMetaData(ptr, free, member, ptype)
-					ptr.value = (ptr.value as Integer) + psize
-				}
-			}
-			else {
-				for (m : regToMeta.values) {
-					m.storeToMem
-				}
-				meta.storeToMem
-				var preg = ptr.register
-				output += "ADDI " + preg + ", " + preg + ", " + (ptr.value as Integer).intValue + "\n"
-				var freg = free.register
-				output += "ADDI " + freg + ", " + freg + ", " + (free.value as Integer).intValue + "\n"
-				var raddr = getScalaMeta(meta.type)
-				var rreg = raddr.register
-				valueToReg(rreg, meta.address)
-				exportMetaData(preg, freg, rreg, type)
-				
-				// Remove the offset from the pointer register
-				output += "ADDI " + preg + ", " + preg + ", " + -(ptr.value as Integer).intValue + "\n"
-				ptr.valid.setOnlyReg
-				output += "ADDI " + freg + ", " + freg + ", " + -(free.value as Integer).intValue + "\n"
-				free.valid.setOnlyReg
-			}
-		}
-		else if (type instanceof BoolType) {
-			var String src
-			if (meta.valid.constant) {
-				src = (meta.value as Boolean)? "r1": "r0"
-			}
-			else {
-				src = meta.register
-			}
-			var preg = ptr.register
-			output += "SB " + src + ", 0x" + Integer.toHexString(intValue) + "(" + preg + ")\n"
-		}
-		else if (type instanceof DoubleType) {
-			var temp = getNewReg
-			if (meta.valid.constant) {
-				valueToReg(temp, Float.floatToIntBits(meta.value as Float))
-			}
-			else if (meta.valid.reg) {
-				var mreg = meta.reg
-				output += "FMV.X.W " + ", " + temp + ", " + mreg + "\n"
-			}
-			else {
-				output += "LW " + temp + ", " + meta.address + "(r0)\n"
-			}
-			var preg = ptr.register
-			output += "SW " + temp + ", 0x" + Integer.toHexString(intValue) + "(" + preg + ")\n"
-		}
-		else {
-			var mreg = meta.register
-			var preg = ptr.register
-			output += op + mreg + ", 0x" + Integer.toHexString(intValue) + "(" + preg + ")\n"
-		}
-	}
-	
-	// Export data structures that stored in the memory
-	// taddr: current address to be written
-	// faddr: the starting address that is free
-	// raddr: the address of the to-be-exported data
-	def void exportMetaData(String taddr, String faddr, String raddr, Type type) {
-
-		// faddr = max(faddr, taddr + dataSize)
-		var temp = getNewReg
-		output += "ADDI " + temp + ", " + taddr + ", " + dataSize(type) + "\n"
-  		output += "CMP " + faddr + ", " + temp + "\nNOP\n"
-  		var flag = getNewReg
-		output += "FBR LT, " + flag + "\n"
-  		var k = arrayIndex++
-  		output += "BEQ " + flag + ", r0, UPDATE_FADDR_" + k + "\n"
-  		output += "ADDI " + faddr + ", " + temp + ", 0\n"
-  		output += "UPDATE_FADDR_" + k + ":\n"
-
-		if (type instanceof TupleType) {
-			var ttype = (type as TupleType).type
-			for (ele : ttype) {
-	   			exportMetaData(taddr, faddr, raddr, ele)
-				output += "ADDI " + taddr + ", " + taddr + ", " + dataSize(ele)
-				output += "ADDI " + raddr + ", " + raddr + ", " + dataSize(ele)
-			}
-		}
-		else if (type instanceof ArrayType) {
-			output += "SUB " + temp + ", " + faddr + ", " + taddr + "\n"
-			output += "SW " + temp + ", 0(" + taddr + ")\n"
-
-	  		var rarray = getNewReg
-	  		output += "LW " + rarray + ", 0(" + raddr + ")\n"
-	  		var length = getNewReg
-	  		output += "LW " + length + ", 0(" + rarray + ")\n"
-			output += "SW " + length + ", 0(" + faddr + ")\n"
-
-			// Update the pointers
-			var tarray = getNewReg
-			output += "ADDI " + tarray + ", " + faddr + ", " + INT_SIZE + "\n"
-			output += "ADDI " + rarray + ", " + rarray + ", " + INT_SIZE + "\n"
-			var ptype = (type as ArrayType).ptype
-			var psize = dataSize(ptype)
-			valueToReg(temp, psize)
-			output += "MUL " + temp + ", " + temp + ", " + length + "\n"
-			output += "ADD " + faddr + ", " + taddr + ", " + temp + "\n"
-			
-	  		output += "ADDI " + temp + ", r0, 0\n" // temp = 0
-	  		output += "ARRAY_" + k  + ":\n"
-	
-	  		output += "CMP " + temp + ", " + length + "\nNOP\n"
-			output += "FBR LT, " + flag + "\n"
-	  		output += "BNE " + flag + ", r1, ARRAY_" + k + "_end\n"
-	  
-   			exportMetaData(tarray, faddr, rarray, ptype)
-			output += "ADDI " + tarray + ", " + tarray + ", " + psize + "\n"
-			output += "ADDI " + rarray + ", " + rarray + ", " + psize + "\n"
-	
-	  		// update index
-	  		output += "ADDI " + temp + ", " + temp + ", 1\n"
-	
-	  		output += "BEQ r0, r0, ARRAY_"+ k  +"\n"  
-	  		output += "ARRAY_"+ k +"_end:\n"
-	  	}
-	  	else {
-  			output += loadOp(type) + temp + ", 0(" + raddr + ")\n"
-  			output += storeOp(type) + temp + ", 0(" + taddr + ")\n"
-	  	}
-	}
-
-	def dispatch MetaData compile(FunctionCall call, HashMap<String, MetaData> map) {
-		compileFunctionCall(call.fun, call.pars, map, NodeModelUtils.getNode(call))
-		return null
-	}
-	
-	def MetaData compileFunctionCall(Variable v, EList<Expression> pars, HashMap<String, MetaData> map, ICompositeNode node) {
-		var FunDeclaration fun
-		if (v instanceof FunDeclaration) { // Normal function call
-			fun = v
-		}
-		else {
-			var uri = URI.createURI(map.get(v.name).reg)
-			fun = v.eResource.resourceSet.getEObject(uri, false) as FunDeclaration
-		}
-		if (fun.o) {
-			var index = funIndex++
-			indexMap.put(fun, index)
-	        var newMap = new HashMap<String, MetaData>
-	        if (!(fun.type instanceof UnitType)) {
-		        var ret = getScalaMeta(fun.type)
-		        createMetaData(ret, fun.type, newMap)
-		        newMap.put("return", ret)
-		    }
-		    
-		    // Compile the parameters in the calling expression/statement
-			for (var i=0; i<pars.size; i++) {
-				var tmeta = fun.pars.get(i).compile(newMap)
-				var ttype = fun.pars.get(i).type
-				var smeta = pars.get(i).compile(map)
-				assignMetaData(tmeta, smeta, ttype, node)
-			}
-			
-			// Compile default parameters
-			for (var i=pars.size; i<fun.pars.size; i++) {
-				var tmeta = fun.pars.get(i).compile(newMap)
-				var ttype = fun.pars.get(i).type
-				var smeta = fun.pars.get(i).exp.compile(map)
-				assignMetaData(tmeta, smeta, ttype, node)
-			}
-			
-			// Execute the called operation
-			fun.block?.compile(newMap)
-			output += "function_" + index + "_end:\n\n"
-	        return newMap.get("return")
-		}
-		else if (fun.f){
-		
-		}
-		else if (fun.p) {
-			var temporary = fetchConfig(fun, fun.name, "type")
-			if (temporary.equals("init")) {
-				output += "QWAIT " + fetchConfig(fun, fun.name, "duration") + '\n'
-			}
-			else if (temporary.equals("meas")) {
-				var reg = pars.get(0).compile(map).reg
-				output += fetchConfig(fun, fun.name, "eqasm") + " " + reg + '\n'
-				output += "QWAIT " + fetchConfig(fun, fun.name, "duration") + "\n"	
-				var rtemp = getNewReg
-				output += "FMR " + rtemp + ", " + reg.replace('s', 'q') + '\n'
-				var meta = new MetaData(rtemp)
-				meta.valid.setOnlyReg
-				meta.type = QuingoFactory::eINSTANCE.createBoolType
-				return meta	
-			}
-			else if (temporary.equals("single-qubit")) {
-				output += duration + fetchConfig(fun, fun.name, "eqasm")
-				output += " " + pars.get(0).compile(map).reg + '\n'
-				duration = fetchConfig(fun, fun.name, "duration") + ", "
-			}
-			else if (temporary.equals("single-qubit-param")) {
-				output += duration + fetchConfig(fun, fun.name, "eqasm")
-				var pmeta = pars.get(1).compile(map)
-				if (!pmeta.valid.constant) {
-					throw new IOException("[_compileFunctionCall] only constant double numbers are supported now!"
-						+ " Check line " + node.startLine + "\n"
-					)
-				}
-				var param = pmeta.value as Float
-				if (param < 0) {
-					output += 'm'
-					param = -param
-				}
-				output += param.toString.replace('.', '_')
-				output += " " + pars.get(0).compile(map).reg + '\n'
-				duration = fetchConfig(fun, fun.name, "duration") + ", "
-			}
-			else if (temporary.equals("two-qubit")) {
-				var q0 = pars.get(0).compile(map).reg.substring(1)
-				var q1 = pars.get(1).compile(map).reg.substring(1)
-				output += "SMIT t0, {(" + q0 + "," + q1 + ")}\n"
-				output += duration + fetchConfig(fun, fun.name, "eqasm") + " t0\n"
-				duration = fetchConfig(fun, fun.name, "duration") + ", "
-			}
-			else {
-				output += "[_compileFunctionCall] temporary=" + temporary + "\n"
-			}
-			global += fetchConfig(fun, fun.name, "duration") as Integer
-		}
-		return null
-	}
-
-	def dispatch MetaData compile(ContinueStatement stat,HashMap<String, MetaData> map) {
-		var container = stat.eContainer
-		while (!(container instanceof WhileStatement || container instanceof ForStatement)) {
-			container = container.eContainer
-		}
-		var continueindex = indexMap.get(container)
-		if (continueindex.intValue > 0) {
-			output += "BEQ r0, r0, labelwhile_" + continueindex + "\n"
-		}
-		return new MetaData
-	}
-	
-	def dispatch MetaData compile(BreakStatement stat, HashMap<String, MetaData> map) {
-		var container = stat.eContainer
-		while (!(container instanceof WhileStatement || container instanceof ForStatement
-		  || container instanceof SwitchStatement)) {
-			container = container.eContainer
-		}
-		var breakindex = Math.abs(indexMap.get(container))
-		output += "BEQ r0, r0, continue_" + breakindex + "\n"
-		return new MetaData
-	}
-		
-	def dispatch MetaData compile(WhileStatement stat, HashMap<String, MetaData> map) {
-		var tempwhileindex = whileIndex++
-		indexMap.put(stat, -tempwhileindex)
-		var a = stat.expression.compile(map)
-		var count = 0
-		while (a.valid.constant) {
-			if (a.value as Boolean) {
-				stat.whilestat.compile(map)
-				a = stat.expression.compile(map)
-			}
-			else {
-				output += "continue_" + tempwhileindex + ":\n"
-				return null
-			}
-			count++
-			if (count >= Configuration.maxUnrolling) {
-				output += "# Unrolling is up to " + count + " loops\n"
-				a.valid.setOnlyReg
-			}
-		}
-
-		//var set = collectVariable(stat.whilestat)
-		var set = new HashSet<String>
-		for (v: stat.eAllContents.toIterable.filter(ExpVariable)) {
-			set.add(v.value.name)
-		}
-		for (variable: set) {
-			variable.storeToMem(map)
-		}
-		output += "# storeToMem finishes\n"
-
-		indexMap.put(stat, tempwhileindex)
-		output += "labelwhile_"+ tempwhileindex + ":\n"
-		a = stat.expression.compile(map)
-		var reg = a.register
-		output += "BNE " + reg + ", r1, continue_" + tempwhileindex + "\n"
-		stat.whilestat.compile(map)
-		for (variable: set) {
-			variable.storeToMem(map)
-		}
-		output += "BEQ r0, r0, " + "labelwhile_"+ tempwhileindex + "\n"
-		output += "continue_" + tempwhileindex + ":\n"
-
-		return null
-	}
-
-
-	def dispatch MetaData compile(ForStatement stat, HashMap<String, MetaData> map) {
-		stat.init.compile(map)
-		
-		var tempwhileindex = whileIndex++
-		indexMap.put(stat, -tempwhileindex)
-		var a = stat.cond.compile(map)
-		var count = 0
-		while (a.valid.constant) {
-			if (a.value as Boolean) {
-				stat.block.compile(map)
-				stat.inc?.compile(map)
-				a = stat.cond.compile(map)
-			}
-			else {
-				output += "continue_" + tempwhileindex + ":\n"
-				return null
-			}
-			count++
-			if (count >= Configuration.maxUnrolling) {
-				output += "# Unrolling is up to " + count + " loops\n"
-				a.valid.setOnlyReg
-			}
-		}
-
-		var set = collectVariable(stat.block)
-		for (variable: set) {
-			variable.storeToMem(map)
-		}
-		output += "# storeToMem finishes\n"
-		indexMap.put(stat, tempwhileindex)
-		output += "labelwhile_"+ tempwhileindex + ":\n"
-
-		a = stat.cond.compile(map)
-		var reg = a.register
-		output += "BNE " + reg + ", r1, continue_" + tempwhileindex + "\n"
-		stat.block.compile(map)
-		stat.inc?.compile(map)
-
-		for (variable: set) {
-			variable.storeToMem(map)
-		}
-		output += "BEQ r0, r0, " + "labelwhile_"+ tempwhileindex + "\n"
-		output += "continue_" + tempwhileindex + ":\n"
-		return null
-	}
-
-	def dispatch MetaData compile(SwitchStatement stat, HashMap<String, MetaData> map) {
-		if (stat.block === null) {
-			return null
-		}
-
-	  	var switchExp = stat.expression.compile(map)
-	  	if (switchExp.valid.constant) {
-			var match = false
-			var count = stat.block.size
-			var i = 0
-	  		for (i=0; i<count; i++) {
-	  			var c = stat.block.get(i)
-  				if (match && c.sblock!==null) {
-  					c.sblock.compile(map)
-  					return null
-  				}
-	  			var cexp = c.exp.compile(map)
-	  			if (cexp.valid.constant) {
-  					match = switchExp.value == cexp.value
-	  			}
-	  			else {
-	  				i = count + 1 // break;
-	  			}
-	  		}
-	  		if (i === count) { // all the cases are constant
-	  			stat.def.sblock.compile(map)
-	  			return null
-	  		}
-	  	}
-
-		var index = switchIndex++
-		indexMap.put(stat, index)
-		var block = stat.block
-		var length = block.length
-		var num = newIntArrayOfSize(length + 1)
-		num.set(length, -1)
-		for (var i=length-1; i>=0; i--) {
-			if (block.get(i).sblock === null) {
-				num.set(i, num.get(i + 1))
-			}
-			else {
-				num.set(i, i)
-			}
-		}
-		
-		map.storeToMem
-	 	for (var i=0; i<block.length; i++) {
-			var cas = block.get(i)
-			if (num.get(i) !== -1) {
-				var meta = cas.exp.compile(map)
-				var sreg = switchExp.register
-				var mreg = meta.register
-				if (cas.sblock === null) {
-					output += "BEQ " + sreg + ", " + mreg + ", switch_" + index + "_" + num.get(i) + "\n"
-				}
-				else {
-					output += "BNE " + sreg + ", " + mreg + ", switch_" + index + "_" + i + "_end\n"
-					output += "switch_" + index + "_" + i + ":\n"
-					cas.sblock.compile(map)
-					output += "switch_" + index + "_" + i + "_end:\n"
-				}
-			}
-		}
-
-		stat.def?.sblock?.compile(map) // null-safe calling
-
-		output += "continue_" + index + ":\n"
-		return null
-	}
-
-	def dispatch MetaData compile(IfStatement stat, HashMap<String, MetaData> map) {
-		var condition = stat.expression.compile(map)
-		if (condition.valid.constant) {
-			if (condition.value as Boolean) {
-				return stat.ifStat.compile(map)
-			}
-			else {
-				return stat.elseStat?.compile(map)
-			}
-		}
-		else {
-			var set = collectVariable(stat.ifStat)
-			for (variable: set) {
-				variable.storeToMem(map)
-			}
-			var index = ifIndex++
-			var creg = condition.register
-			if (stat.elseStat === null) {
-				output += "BNE " + creg + ", r1, if_" + index + "_end\n"
-				stat.ifStat.compile(map)
-				for (variable: set) {
-					variable.storeToMem(map)
-				}
-				output += "if_" + index + "_end:\n"
-			}
-			else {
-				output += "BNE " + creg + ", r1, ne_path_" + index + "\n"
-				stat.ifStat.compile(map)
-				for (variable: set) {
-					variable.storeToMem(map)
-				}
-				output += "BEQ r0, r0, if_" + index + "_end\n"
-				output += "ne_path_" + index + ":\n"
-				var elseSet = collectVariable(stat.elseStat)
-				for (variable: elseSet) {
-					variable.storeToMem(map)
-				}
-				stat.elseStat.compile(map)
-				for (variable: elseSet) {
-					variable.storeToMem(map)
-				}
-				output += "if_" + index + "_end:\n"
-			}
-		}
-		return null
-	}
-	
-	def dispatch MetaData compile(Assignment assignment, HashMap<String, MetaData> map) {
-		var rmeta = assignment.value.compile(map)
-		left = true
-		var leftExp = assignment.left as Expression
-		var lmeta = leftExp.compile(map)
-		left = false
-		assignMetaData(lmeta, rmeta, xsemantics.exptype(leftExp).value, NodeModelUtils.getNode(assignment))
-		return null
-	}
-	
-	def dispatch MetaData compile(OpAssignment assignment, HashMap<String, MetaData> map) {
-		var rmeta = assignment.right.compile(map)
-		left = true
-		var leftExp = assignment.left as Expression
-		var lmeta = leftExp.compile(map)
-		left = false
-		var meta = compileOperator(lmeta, rmeta, assignment.op.replaceFirst("=", ""))
-		assignMetaData(lmeta, meta, xsemantics.exptype(leftExp).value, NodeModelUtils.getNode(assignment))
-		return null
-	}
-	
-	def dispatch MetaData compile(UsingStatement stat, HashMap<String, MetaData> map) {
-		var qvar = stat.qvar
-		var type = stat.type
-		var qnum = 0
-		if (qvar.length > 1) {
-			var ttype = (type as TupleType).type
-			for (var i=0; i<qvar.length; i++) {
-				var meta = allocateQubit(qvar.get(i).name, ttype.get(i), map)
-				if (meta.link === null) {
-					qnum += 1
-				}
-				else {
-					qnum += meta.value as Integer
-				}
-			}
-		}
-		else {
-			var meta = allocateQubit(qvar.get(0).name, type, map)
-			if (meta.link === null) {
-				qnum += 1
-			}
-			else {
-				qnum += meta.value as Integer
-			}
-		}
-		stat.block.compile(map)
-		sIndex -= qnum // deallocate qubits
-		return null
-	}
-	
-	def MetaData allocateQubit(String name, Type type, HashMap<String, MetaData> map) {
-		var meta = new MetaData
-		if (type instanceof QubitType) {
-			meta.reg = "s" + sIndex
-			output += "SMIS " + meta.reg + ", {" + sIndex++ + "}\n"
-		}
-		else {
-			var atype = type as ArrayType
-			if (atype.length === null) {
-				meta.value = 0
-			}
-			else {
-				var lengMeta = atype.length.compile(map)
-				if (!lengMeta.valid.constant) {
-					writeFile
-					throw new IOException("[allocateQubit] The length of qubit array must be constant!\n")
-				}
-				meta.value = lengMeta.value
-			}
-			meta.valid.constant = true
-			meta.link = new ArrayList<MetaData>
-			for (var i=0; i<meta.value as Integer; i++) {
-				var child = new MetaData
-				child.reg = "s" + sIndex
-				output += "SMIS " + child.reg + ", {" + sIndex++ + "}\n"
-				meta.link.add(child)
-			}
-		}
-		meta.type = QuingoFactory::eINSTANCE.createQubitType
-		map.put(name, meta)
-		return meta
-	}
-		
-	def dispatch MetaData compile(EmptyStatement stat, HashMap<String, MetaData> map) {
-		return null
-	}
-	
-	def dispatch MetaData compile(TimerDeclaration timer, HashMap<String, MetaData> map) {
-		timerMap.put(timer, global)
-		return null
-	}
-	
-	def dispatch MetaData compile(TimingConstraint stat, HashMap<String, MetaData> map) {
-		var timer = timerMap.get(stat.timer)
-		var meta = stat.value.compile(map)
-		var delay = timer + meta.value as Integer - global
-		output += "QWAIT " + delay + "\n"
-		global += delay
-		return null
-	}
-	
-	def dispatch MetaData compile(ExpFunctionCall exp, HashMap<String, MetaData> map) {
-		return compileFunctionCall(exp.fun, exp.pars, map, NodeModelUtils.getNode(exp))
-	}
-	
-	def dispatch MetaData compile(Or exp, HashMap<String, MetaData> map) {
-		var lmeta = exp.left.compile(map)
-		var rmeta = exp.right.compile(map)
-		if (lmeta.valid.constant && rmeta.valid.constant) {
-			return new MetaData(lmeta.value as Boolean || rmeta.value as Boolean)
-		}
-		var lreg = lmeta.register
-		var rreg = rmeta.register
-		var meta = getScalaMeta(QuingoFactory.eINSTANCE.createBoolType)
-		output += "OR " + meta.register + ", " + lreg + ", " + rreg + "\n"
-		return meta	
-	}
-	
-	def dispatch MetaData compile(And exp, HashMap<String, MetaData> map) {
-		var lmeta = exp.left.compile(map)
-		var rmeta = exp.right.compile(map)
-		if (lmeta.valid.constant && rmeta.valid.constant) {
-			return new MetaData(lmeta.value as Boolean && rmeta.value as Boolean)
-		}
-		var lreg = lmeta.register
-		var rreg = rmeta.register
-		var meta = getScalaMeta(QuingoFactory.eINSTANCE.createBoolType)
-		output += "AND " + meta.register + ", " + lreg + ", " + rreg + "\n"
-		return meta
-	}
-	
-	def dispatch MetaData compile(Equal exp, HashMap<String, MetaData> map) {
-		var lmeta = exp.left.compile(map)
-		var rmeta = exp.right.compile(map)
-		if (lmeta.valid.constant && rmeta.valid.constant) {
-			if (exp.op == "==") {
-				return new MetaData(lmeta.value == rmeta.value)
-			}
-			else {
-				return new MetaData(lmeta.value != rmeta.value)
-			}
-		}
-		var lreg = lmeta.register
-		var rreg = rmeta.register
-		var meta = getScalaMeta(QuingoFactory.eINSTANCE.createBoolType)
-		var reg = meta.register
-		if (lmeta.type instanceof DoubleType) {
-			output += "FEQ.S " + reg + ", " + lreg + ", " + rreg + "\n"
-			if (exp.op.equals("!=")) {
-				output += "SUB " + reg + ", r1, " + reg + "\n"
-			}
-		}
-		else {
-			output += "CMP " + lreg + ", " + rreg + "\nNOP\n"
-			if(exp.op.equals("==")) {
-				output += "FBR EQ, " + reg + "\n"
-			}
-			else {
-				output += "FBR NE, " + reg + "\n"
-			}
-		}
-		return meta	
-	}	
-
-	def dispatch MetaData compile(NEqual exp, HashMap<String, MetaData> map) {
-		var lmeta = exp.left.compile(map)
-		var rmeta = exp.right.compile(map)
-		if (lmeta.valid.constant && rmeta.valid.constant) {
-			if (lmeta.type instanceof DoubleType) {
-				var lvalue = lmeta.value as Float
-				var rvalue = rmeta.value as Float
-				return switch (exp.op) {
-					case "<":
-						new MetaData(lvalue < rvalue)
-					case "<=":
-						new MetaData(lvalue <= rvalue)
-					case ">=":
-						new MetaData(lvalue >= rvalue)
-					case ">":
-						new MetaData(lvalue > rvalue)
-				}
-			}
-			else {
-				var lvalue = lmeta.value as Integer
-				var rvalue = rmeta.value as Integer
-				return switch (exp.op) {
-					case "<":
-						new MetaData(lvalue < rvalue)
-					case "<=":
-						new MetaData(lvalue <= rvalue)
-					case ">=":
-						new MetaData(lvalue >= rvalue)
-					case ">":
-						new MetaData(lvalue > rvalue)
-				}
-			}
-		}
-
-		var lreg = lmeta.register
-		var rreg = rmeta.register
-		var meta = getScalaMeta(QuingoFactory.eINSTANCE.createBoolType)
-		var reg = meta.register
-		if (lmeta.type instanceof DoubleType) {
-			if (exp.op.equals("<")) {
-				output += "FLT.S " + reg + ", " + lreg + ", " + rreg + "\n"
-			}
-			else if (exp.op.equals("<=")) {
-				output += "FLE.S " + reg + ", " + lreg + ", " + rreg + "\n"
-			}
-			else if(exp.op.equals(">=")) {
-				output += "FLT.S " + reg + ", " + lreg + ", " + rreg + "\n"
-				output += "SUB " + reg + ", r1, " + reg + "\n"
-			}
-			else if (exp.op.equals(">")) {
-				output += "FLE.S " + reg + ", " + lreg + ", " + rreg + "\n"
-				output += "SUB " + reg + ", r1, " + reg + "\n"
-			}
-		}
-		else {
-			output += "CMP " + lreg + ", " + rreg + "\nNOP\n"
-			if (exp.op.equals("<")) {
-				output += "FBR LT, " + reg + "\n"
-			}
-			else if (exp.op.equals("<=")) {
-				output += "FBR LE, " + reg + "\n"
-			}
-			else if(exp.op.equals(">=")) {
-				output += "FBR GE, " + reg + "\n"
-			}
-			else if (exp.op.equals(">")) {
-				output += "FBR GT, " + reg + "\n"
-			}
-		}
-		return meta
-	}
-	
-	def MetaData compileOperator(MetaData lmeta, MetaData rmeta, String op) {
-		if (lmeta.valid.constant && rmeta.valid.constant) {
-			if (lmeta.type instanceof IntType) {
-				var lvalue = lmeta.value as Integer
-				var rvalue = rmeta.value as Integer
-				switch (op) {
-				case "+":
-					return new MetaData(lvalue + rvalue)
-				case "-":
-	    			return new MetaData(lvalue - rvalue)
-	   			case "*":
-			  	  	return new MetaData(lvalue * rvalue)
-	   			case "/":
-					return new MetaData(lvalue / rvalue)
-	   			case "%":
-					return new MetaData(lvalue % rvalue)
-				}
-			}
-			else {
-				var lvalue = lmeta.value as Float
-				var rvalue = rmeta.value as Float
-				switch (op) {
-				case "+":
-					return new MetaData(lvalue + rvalue)
-				case "-":
-	    			return new MetaData(lvalue - rvalue)
-	   			case "*":
-			  	  	return new MetaData(lvalue * rvalue)
-	   			case "/":
-					return new MetaData(lvalue / rvalue)
-				}
-			}
-		}
-		var lreg = lmeta.register
-		var rreg = rmeta.register
-		var meta = getScalaMeta(lmeta.type)
-		var reg = meta.register
-		var String inst
-		inst = switch (op) {
-			case "+": "ADD"
-			case "-": "SUB"
-	 		case "*": "MUL"
-	 		case "/": "DIV"
-	 		case "%": "REM"
-		}
-		if (lmeta.type instanceof DoubleType) {
-			inst = "F" + inst + ".S"
-		}
-		output += inst + " " + reg + ", " + lreg + ", " + rreg + "\n"
-		return meta
-	}
-	
-	def dispatch MetaData compile(Add exp, HashMap<String, MetaData> map) {
-		var lmeta = exp.left.compile(map)
-		var rmeta = exp.right.compile(map)
-		return compileOperator(lmeta, rmeta, exp.op)
-	}
-	
-	def dispatch MetaData compile(Mult exp, HashMap<String, MetaData> map) {
-		var lmeta = exp.left.compile(map)
-		var rmeta = exp.right.compile(map)
-		return compileOperator(lmeta, rmeta, exp.op)
-	}
-
-	def dispatch MetaData compile(Unary exp, HashMap<String, MetaData> map) {
-		var fmeta = exp.final.compile(map)
-		if (exp.op == "+") {
-			return fmeta
-		}	
-
-		if (fmeta.valid.constant) {
-			if (exp.op == "-") {
-				if (fmeta.value instanceof Integer) {
-					return new MetaData(-(fmeta.value as Integer))
-				}
-				else if (fmeta.value instanceof Float) {
-					return new MetaData(-(fmeta.value as Float))
-				}
-			}	
-			else if (exp.op == "!") {
-				return new MetaData(!(fmeta.value as Boolean))
-			}
-		}
-		fmeta.register
-		var meta = getScalaMeta(fmeta.type)
-		var reg = meta.register
-		if (exp.op == "-") {
-			if (fmeta.type instanceof DoubleType) {
-				output += "FNEG.S " + reg + ", " + fmeta.reg + "\n"
-			}
-			else {
-				output += "SUB " + reg + ", r0, " + fmeta.reg + "\n"
-			}
-		}
-		else if (exp.op == "!") {
-			output += "SUB " + reg + ", r1, " + fmeta.reg + "\n"
-		}
-		return meta
-	}
-
-	def dispatch MetaData compile(ExpVariable exp, HashMap<String, MetaData> map) {
-		var value = (exp as ExpVariable).value
-		if (value instanceof FunDeclaration) {
-			return new MetaData(EcoreUtil.getURI(exp.value).toString)
-		}
-		else {
-			var meta = map.get(exp.value.name)
-			if (!left && !meta.valid.atLeastOne && !(meta.type instanceof QubitType)) {
-				throw new IOException("The value of variable " + value.name + " in line "
-					+ NodeModelUtils.getNode(exp).getStartLine + " of "
-					+ exp.eResource.URI.lastSegment + " is undefined!")
-			}
-			return meta
-		}
-	}
-	
-	def void assignMetaData(MetaData target, MetaData right, Type type, ICompositeNode node) {
-		if (type instanceof TupleType) {
-			var ttype = (type as TupleType).type
-			var benull = target.link === null
-			if (benull) {
-				target.link = new ArrayList<MetaData>
-			}
-			var addr = target.addr
-			for (var i=0; i<ttype.length; i++) {
-				var cright = right.link.get(i)
-				var ctype = ttype.get(i)
-
-				var MetaData ctarget
-				if (benull) {
-					ctarget = getScalaMeta(ctype)
-					ctarget.address = addr
-					addr += ctype.dataSize
-					target.link.add(ctarget)
-				}
-				else {
-					ctarget = target.link.get(i)
-				}
-				assignMetaData(ctarget, cright, ctype, node)
-			}
-			target.valid.setOnlyConstant
-		}
-		else if (type instanceof ArrayType) {
-			var ptype = (type as ArrayType).ptype
-			if (target.valid.constant && right.valid.constant) {
-				var rvalue = (right.value as Integer).intValue
-				if ((target.link === null) || (target.value as Integer) < rvalue) {
-					var reg = target.register
-					valueToReg(reg, memoryAddr)
-					//target.valid.setConAndReg
-					target.value = rvalue
-						
-					// Allocate memory for the array
-					var addr = memoryAddr + INT_SIZE
-					var size = dataSize(ptype)
-					memoryAddr = addr + rvalue * size
-					
-					// Create array members
-					target.link = new ArrayList<MetaData>
-					for (rchild : right.link) {
-						var tchild = getScalaMeta(type.ptype)
-						tchild.address = addr
-						addr += size
-						assignMetaData(tchild, rchild, ptype, node)
-						target.link.add(tchild)
-					}
-				}
-				else {
-					for (var i=0; i<rvalue; i++) {
-						assignMetaData(target.link.get(i), right.link.get(i), ptype, node)
-					}
-					var num = (target.value as Integer) - rvalue
-					for (var i=0; i<num; i++) {
-						target.link.remove(rvalue)
-					}
-					target.value = right.value
-				}
-				target.valid.constant = true
-			}
-			else {
-				for (m : regToMeta.values) {
-					m.storeToMem
-				}
-				target.storeToMem
-				right.storeToMem
-				var taddr = getScalaMeta(target.type)
-				var treg = taddr.register
-				valueToReg(treg, target.address)
-				var raddr = getScalaMeta(right.type)
-				var rreg = raddr.register
-				valueToReg(rreg, right.address)
-				assignDataInMem(taddr, raddr)
-				target.valid.setOnlyMem
-			}
-		}
-		else if (type instanceof QubitType || type instanceof FunctionType) {
-			target.reg = right.reg
-		}
-		else { // normal assignment
-			if (target.type instanceof PointerType) {
-				var rreg = right.register
-				var treg = target.register
-				output += storeOp(right.type) + rreg + ", " + hex(target.value as Integer) + "(" + treg + ")\n"
-				target.valid.setOnlyReg
-				return
-			}
-			if (right.valid.constant) {
-				target.valid.setOnlyConstant
-				target.value = right.value
-				target.type = xsemantics.copytype(right.type).value
-				return
-			}
-			else if (right.valid.mem) {
-				right.register
-			}
-			
-			if (right.valid.reg) {
-				var treg = target.register
-				var rreg = right.register
-				if (right.type instanceof DoubleType) {
-					output += "FADD " + treg + ", " + rreg + ", f0\n"
-				}
-				else {
-					output += "ADD " + treg + ", " + rreg + ", r0\n"
-				}
-				target.type = xsemantics.copytype(right.type).value
-				target.valid.setOnlyReg
-			}
-			else { // right.valid === Position::NONE
-				writeFile
-				throw new IOException("[assignMetaData] undefined source value in line " + node.startLine + "!\n")
-			}
-		}
-	}
-	
-	def void assignDataInMem(MetaData taddrMeta, MetaData raddrMeta) {
-		var taddr = taddrMeta.register
-		var raddr = raddrMeta.register
-
-		var type = taddrMeta.type
-		if (type instanceof ArrayType) {
-			var treg = getNewReg
-	  		output += "LW " + treg + ", 0(" + taddr + ")\n"
-	  		var rreg = getNewReg
-	  		output += "LW " + rreg + ", 0(" + raddr + ")\n"
-
-			// Compare the length
-			var rlengthMeta = getScalaMeta(QuingoFactory.eINSTANCE.createIntType)
-	  		var rlength = rlengthMeta.register
-	  		output += "LW " + rlength + ", 0(" + rreg + ")\n"
-			var tlengthMeta = getScalaMeta(QuingoFactory.eINSTANCE.createIntType)
-	  		var tlength = tlengthMeta.register
-	  		output += "LW " + tlength + ", 0(" + treg + ")\n"
-	  		output += "CMP " + rlength + ", " + tlength + "\n"
-	  		output += "NOP\n"
-	  		var k = arrayIndex++
-	  		output += "FBR LE, " + tlength + "\n"
-			output += "BNE " + tlength + ", r0, ARRAY_ALLOC_" + k + "_END\n"
-
-			// Allocate memory for the target array
-			output += "ADDI " + treg + ", r2, 0\n"
-			output += "SW r2, 0(" + taddr + ")\n"
-			updateFreeAddr(type.ptype, rlengthMeta)
-	  		output += "ARRAY_ALLOC_" + k  + "_END:\n"
-	
-	  		// Copy the length
-	  		output += "SW " + rlength + ", 0(" + treg+ ")\n"
-
-	  		var rLowaddrMeta = getScalaMeta(type.ptype)
-	  		var rLowaddr = rLowaddrMeta.register
-	  		output += "ADDI " + rLowaddr + ", " + rreg + ", " + INT_SIZE + "\n"
-	  		var tLowAddrMeta = getScalaMeta(type.ptype)
-	  		var tLowAddr = tLowAddrMeta.register
-	  		output += "ADDI " + tLowAddr + ", " + treg + ", " + INT_SIZE + "\n"
-	
-	  		var rindexMeta = getScalaMeta(QuingoFactory.eINSTANCE.createIntType)
-	  		var rindex = rindexMeta.register
-	  		output += "ADDI " + rindex + ", r0, 0\n" // rindex = 0
-
-			// while (rindex < rlength)
-	  		output += "ARRAY_" + k + ":\n"
-			output += "CMP " + rindex + ", " + rlength + "\nNOP\n"
-	  		var flag = getNewReg
-			output += "FBR LT, " + flag + "\n"
-	  		output += "BNE " + flag + ", r1, ARRAY_" + k + "_end\n"
-	  		
-	  		// Recursively copy
-	  		assignDataInMem(tLowAddrMeta, rLowaddrMeta)
-
-	  		// Update index
-	  		rindex = rindexMeta.register
-	  		output += "ADDI " + rindex + ", " + rindex + ", " + 1 + "\n"	
-	  		output += "BEQ r0, r0, ARRAY_" + k + "\n"
-	  		output += "ARRAY_" + k + "_end:\n"
-		}
-	  	else {
-	  		var flag = getNewReg(type)
-  			output += loadOp(type) + flag + ", 0(" + raddr + ")\n"
-  			output += storeOp(type) + flag + ", 0(" + taddr + ")\n"
-	  	}
-	  	
-	  	// Advance the pointers
-  		var size = dataSize(type)
-  		output += "ADDI " + raddr + ", " + raddr + ", " + size + "\n"
-  		output += "ADDI " + taddr + ", " + taddr + ", " + size + "\n"
-	}
-	
-	def void assignDataInMem(Type type, String rreg, String treg, String addr) {
-		if (type instanceof TupleType) {
-			var ttype = (type as TupleType).type
-			for (ele : ttype) {
-	   			assignDataInMem(ele, rreg, treg, addr)
-			}
-		}
-		else if (type instanceof ArrayType) {
-	  		var rlength = getNewReg
-	  		output += "LW " + rlength + ", 0(" + rreg + ")\n"
-	  		var tlength = getNewReg
-	  		output += "LW " + tlength + ", 0(" + treg + ")\n"
-	  		output += "CMP " + rlength + ", " + tlength + "\n"
-	  		output += "NOP\n"
-	  		var k = arrayIndex++
-	  		output += "FBR LE, " + tlength + "\n"
-			output += "BNE " + tlength + ", r0, ARRAY_ALLOC_" + k + "\n"
-	  		output += "ADDI " + treg + ", r2, 0\n"
-	  		output += "SW " + treg + ", 0(" + addr + ")\n"
-	  		output += "ADDI r2, r2, " + INT_SIZE + "\n"
-			var ptype = (type as ArrayType).ptype
-			var size = dataSize(ptype)
-	  		var rindex = getNewReg
-	  		var taddr = getNewReg
-	  		var flag = getNewReg
-			if (ptype instanceof ArrayType) {
-				valueToReg(tlength, Configuration.staticAddr)
-		  		output += "ADDI " + rindex + ", r0, 0\n" // rindex = 0
-				output += "ADDI " + taddr + ", " + treg + "," + INT_SIZE + "\n"
-		  		output += "HIGHER_ARRAY_ALLOC_" + k + ":\n"
-		  		output += "CMP " + rindex + ", " + rlength + "\n"
-		  		output += "NOP\n"
-				output += "FBR GE, " + flag + "\n"
-				output += "BNE " + flag + ", r0, HIGHER_ARRAY_ALLOC_" + k + "END\n"
-				output += "SW " + tlength + ", 0(" + taddr + ")\n"
-		  		output += "ADDI " + rindex + ", " + rindex + ", " + 1 + "\n"
-		  		output += "ADDI " + taddr + ", " + taddr + ", " + size + "\n"
-		  		output += "BEQ r0, r0, HIGHER_ARRAY_ALLOC_" + k + ":\n"
-		  		output += "HIGHER_ARRAY_ALLOC_" + k + "_END:\n"
-			}
-			else {
-				valueToReg(tlength, size)
-				output += "MUL " + tlength + ", " + tlength + ", " + rlength + "\n"
-				output += "ADD r2, r2, " + tlength + "\n"
-			}
-	  		output += "ARRAY_ALLOC_" + k + ":\n"
-	  		
-	  		output += "SW " + rlength + ", 0(" + treg+ ")\n"
-	
-	  		var raddr = getNewReg
-	  		output += "ADDI " + raddr + ", " + rreg + ", " + INT_SIZE + "\n"
-	  		output += "ADDI " + taddr + ", " + treg + ", " + INT_SIZE + "\n"
-	
-	  		output += "ADDI " + rindex + ", r0, 0\n" // rindex = 0
-	  		output += "ARRAY_" + k  + ":\n"
-	
-			output += "CMP " + rindex + ", " + rlength + "\nNOP\n"
-			output += "FBR LE, " + flag + "\n"
-	  		output += "BNE " + flag + ", r1, ARRAY_" + k + "_end\n"
-	  
-			if (ptype instanceof ArrayType) {
-				var rlow = getNewReg
-				output += "LW " + rlow + ", 0(" + raddr + ")\n"
-				var tlow = getNewReg
-				output += "LW " + tlow + ", 0(" + taddr + ")\n"
-	   			assignDataInMem(ptype, rlow, tlow, taddr)
-			}
-			else {
-	   			assignDataInMem(ptype, raddr, taddr, addr)
-			}
-	
-	  		// update index
-	  		output += "ADDI " + rindex + ", " + rindex + ", " + 1 + "\n"
-	
-	  		output += "BEQ r0, r0, ARRAY_" + k + "\n"  
-	  		output += "ARRAY_" + k + "_end:\n"
-	  	}
-	  	else {
-	  		var flag = getNewReg(type)
-  			output += loadOp(type) + flag + ", 0(" + rreg + ")\n"
-  			output += storeOp(type) + flag + ", 0(" + treg + ")\n"
-	  	}
-
-  		var size = dataSize(type)
-  		output += "ADDI " + rreg + ", " + rreg + ", " + size + "\n"
-  		output += "ADDI " + treg + ", " + treg + ", " + size + "\n"
-	}
-	
-	def dispatch MetaData compile(BooleanLiteral exp, HashMap<String, MetaData> map) {
-		return new MetaData(exp.isTrue)
-	}
-	
-	def dispatch MetaData compile(IntLiteral exp, HashMap<String, MetaData> map) {
-		return new MetaData(exp.value)
-	}
-	
-	def dispatch MetaData compile(DoubleLiteral exp, HashMap<String, MetaData> map) {
-		return new MetaData(exp.value)
-	}
-	
-	def dispatch MetaData compile(ArrayAccess exp, HashMap<String, MetaData> map) {
-     	// get the base address
-     	var base = exp.array.compile(map)
-		var dim = exp.dim.compile(map)
-		
-		if (base.valid.constant) {
-			if (dim.valid.constant) {
-				var dimValue = dim.value as Integer
-				var baseValue = base.value as Integer
-				if (dimValue >= baseValue) {
-					var node = NodeModelUtils.getNode(exp)
-					throw new IndexOutOfBoundsException(node.getText + " at line " + node.getStartLine
-						+ " accesses index " + dimValue + " in an array of size " + baseValue
-					)
-				}
-				return base.link.get(dimValue)
-			}
-			else {
-				base.storeToMem
-			}
-		}
-     	
-		var type = (xsemantics.exptype(exp.array).value as ArrayType).ptype
-		var ptr = left && !(type instanceof ArrayType)
-		var size = dataSize(type)
-		
-		// calculate shift
-		var String rtemp
-	    rtemp = getNewReg   
-
-		var shift = 0
-		var rmeta = new MetaData(rtemp)
-		rmeta.valid.setOnlyReg
-		var op = loadOp(type)
-
-		if (dim.valid.constant) {
-			shift = size * (dim.value as Integer).intValue + INT_SIZE
-			if (ptr) {
-				rmeta.reg = base.register
-				rmeta.value = shift
-				rmeta.type = new PointerType
-			}
-			else {
-				var breg = base.register
-	     		output += op + rtemp + ", " + shift + "(" + breg  + ")\n" // actual fetch
-	     		rmeta.type = xsemantics.copytype(type).value
-	     	}
-		}
-		else {
-			valueToReg(rtemp, size) // rtemp = size
-			var dreg = dim.register
-	     	output += "MUL " + rtemp + ", " + rtemp + ", " + dreg + "\n" // rtemp *= dim
-			output += "ADDI " + rtemp + ", " + rtemp + ", " + INT_SIZE + "\n" // rtemp += 4 (considering the element that stores the length)
-			var breg = base.register
-	     	output += "ADD " + rtemp + ", " + breg + ", "+ rtemp + "\n" // rtemp += base
-			if (ptr) {
-				rmeta.reg = rtemp
-				rmeta.value = 0
-				rmeta.type = new PointerType
-			}
-			else {
-		     	output += op + rtemp + ", 0("  + rtemp  + ")\n" // final fetch
-	     		rmeta.type = xsemantics.copytype(type).value
-		    }
-		}
-     	
-		return rmeta
-	}
-	
-	def dispatch MetaData compile(ExpLength exp, HashMap<String, MetaData> map) {
-  		var addr = (exp as ExpLength).left.compile(map)
-  		if (addr.valid.constant) {
-  			return new MetaData(addr.value as Integer)
-  		}
-  		else {
-	     	var meta = new MetaData
-  			var reg = meta.register
-	  		output += "LW " + reg + ", 0("  + addr.reg  + ")\n"
-	  		meta.valid.setOnlyReg
-	  		return meta
-	  	}
-  	}
-   	
-   	def dispatch MetaData compile(ExpTuple exp, HashMap<String, MetaData> map) {
-   		var length = exp.texp.length
-   		if (length === 1) {
-   			return exp.texp.get(0).compile(map)
-   		}
-   		var meta = new MetaData
-   		meta.value = length
-   		meta.link = new ArrayList<MetaData>
-   		meta.type = QuingoFactory.eINSTANCE.createTupleType
-	   	for (var i=0; i<length; i++) {
-	   		meta.link.add(exp.texp.get(i).compile(map))
-	   	}
-	   	return meta
-   	}
-   	
-   	def dispatch MetaData compile(ExpArray exp, HashMap<String, MetaData> map) {
-		var length = exp.exp.length
-		var link = new ArrayList<MetaData>
-		for (e: exp.exp) {
-			link.add(e.compile(map))
-		}
-
-   		var meta = new MetaData
-   		meta.type = QuingoFactory.eINSTANCE.createArrayType => [
-   			ptype = xsemantics.exptype(exp.exp.get(0)).value
-   		]
-		meta.value = length
-		meta.valid.setOnlyConstant
-		meta.link = link
-		return meta	
-	}
-	
-	def dispatch MetaData compile(ToInt exp, HashMap<String, MetaData> map) {
-		var fmeta = exp.value.compile(map)
-		if (fmeta.type instanceof IntType) {
-			return fmeta
-		}
-		if (fmeta.valid.constant) {
-			return new MetaData((fmeta.value as Float).intValue)
-		}
-		var meta = getScalaMeta(QuingoFactory.eINSTANCE.createIntType)
-		var freg = fmeta.register
-		var reg = meta.register
-		output += "FCVT.W.S " + reg + ", " + freg + "\n"
-		return meta
-	}
-	
-	def dispatch MetaData compile(ToDouble exp, HashMap<String, MetaData> map) {
-		var imeta = exp.value.compile(map)
-		if (imeta.type instanceof DoubleType) {
-			return imeta
-		}
-		if (imeta.valid.constant) {
-			return new MetaData((imeta.value as Integer).floatValue)
-		}
-		var meta = getScalaMeta(QuingoFactory.eINSTANCE.createDoubleType)
-		var ireg = imeta.register
-		var reg = meta.register
-		output += "FCVT.S.W " + reg + ", " + ireg + "\n"
-		return meta
-	}
-	
-	def collectVariable(Statement stat) {
-		var ret = new HashSet<String>
-		for (r : stat.eAllContents.toIterable.filter(Assignment)) {
-			for (v : r.eAllContents.toIterable.filter(ExpVariable)) {
-				ret.add(v.value.name)
-			}
-		}
-		for (r : stat.eAllContents.toIterable.filter(OpAssignment)) {
-			for (v : r.eAllContents.toIterable.filter(ExpVariable)) {
-				ret.add(v.value.name)
-			}
-		}
-		return ret
-	}
-		
-	def storeToMem(HashMap<String, MetaData> map) {
-		for (meta: map.values) {
-			if (!(meta.type instanceof QubitType) && meta.valid.atLeastOne) {
-				meta.storeToMem
-			}
-		}
-	}
-	
-	def storeToMem(String str, HashMap<String, MetaData> map) {
-		map.get(str).storeToMem
-	}
-	
-	def void storeToMem(MetaData meta) {
-		var link = meta.link
-		var valid = meta.valid
-
-		if (meta.type instanceof TupleType) {
-			for (child : link) {
-				child.storeToMem
-			}
-			return
-		}
-		else if (meta.type instanceof QubitType) {
-			return
-		}
-
-		if (meta.valid.mem) {
-			valid.setOnlyMem
-			return
-		}
-		
-		var addr = meta.addr
-		var op = storeOp(meta.type)
-		if (valid.constant) {
-			if (meta.type instanceof ArrayType) {
-				var rlength = newReg
-				valueToReg(rlength, meta.value as Integer)
-				var reg = meta.register
-				output += "SW " + rlength + ", 0(" + reg + ")\n"
-				output += "SW " + reg + ", " + hex(addr) + "(r0)\n"
-				for (child : link) {
-					child.storeToMem
-				}
-				meta.link = null
-				meta.reg = ""
-			}
-			else if (meta.type instanceof BoolType) {
-				var src = meta.value as Boolean? "r1": "r0"
-				output += op + src + ", 0x" + Integer.toHexString(addr) + "(r0)\n"
-			}
-			else {
-				var rreg = meta.getRegister
-				output += op + rreg + ", 0x" + Integer.toHexString(addr) + "(r0)\n"
-			}
-		}
-		else if (valid.reg) {
-			var reg = meta.register
-			output += op + reg + ", 0x" + Integer.toHexString(addr) + "(r0)\n"
-		}
-		valid.setOnlyMem
-	}
-	
-	def valueToReg(String reg, int value) {
-		if (value < 0x1000 && value > -0x1000) {
-			output += "ADDI " + reg + ", r0, " + value + "\n"
-		}
-		else {
-			output += "LDI " + reg + ", " + hex(value.bitwiseAnd(0xFFFFF)) + "\n"
-			output += "LDUI " + reg + ", " + reg + ", " + hex(value >>> 17) + "\n"
-		}
-	}
-	
-	def String getRegister(MetaData meta) {
-		var valid = meta.valid
-		if (valid.reg) {
-			return meta.reg
-		}
-		if (meta.reg.equals("")) {
-			meta.reg = getNewReg(meta.type)
-		}
-		if (valid.constant) {
-			if (meta.type instanceof BoolType) {
-				var src = (meta.value as Boolean)? "r1": "r0"
-				output += "ADD " + meta.reg + ", " + src + ", r0\n"
-			}
-			else if (meta.type instanceof DoubleType) {
-				var temp = getNewReg
-				valueToReg(temp, Float.floatToIntBits(meta.value as Float))
-				output += "FMV.W.X " + meta.reg + ", " + temp + "\n"
-			}
-			else if (meta.type instanceof ArrayType) {
-				output += "LW " + meta.reg + ", 0x" + Integer.toHexString(meta.address) + "(r0)\n"
-			}
-			else {
-				valueToReg(meta.reg, meta.value as Integer)
-			}
-		}
-		else if (valid.mem) {
-			output += loadOp(meta.type) + meta.reg + ", " + hex(meta.address) + "(r0)\n"
-		}
-		valid.reg = true
-		regToMeta.put(meta.reg, meta)
-		return meta.reg
-	}
-
-	def int getAddr(MetaData meta) {
-		if (meta.address === 0) {
-			meta.address = allocateAddr(meta.type)
-		}
-		return meta.address
-	}
-
-	def int dataSize(Type type) {
-		if (type instanceof IntType) {
-			return INT_SIZE
-		}
-		else if (type instanceof BoolType) {
-			return BOOL_SIZE
-		}
-		else if (type instanceof ArrayType) {
-			return POINTER_SIZE 
-		}
-		else if (type instanceof PointerType) {
-			return POINTER_SIZE 
-		}
-		else if (type instanceof DoubleType) {
-			return DOUBLE_SIZE 
-		}
-		else if (type instanceof TupleType) {
-			var sum = 0
-			for (ttype: type.type) {
-				sum += dataSize(ttype)
-			}
-			return sum
-		}
-		return 0
-	}
-
-	def String getNewReg() {
-		getNewReg(QuingoFactory::eINSTANCE.createIntType)
-	}
-	
-	def String getNewReg(Type type) {
-		var String reg
-		if (type instanceof DoubleType) {
-			if (fIndex > 31) {
-				fIndex = 1
-			}
-			reg = "f" + fIndex++
-		}
-		else {
-			if (iIndex > 31) {
-				iIndex = 3
-			}
-			reg = "r" + iIndex++
-		}
-
-		var meta = regToMeta.get(reg)
-		if (meta !== null) {
-			var valid = meta.valid
-			if (valid.onlyReg) { //store reg to memory
-				if (meta.address === 0) {
-					meta.address = allocateAddr(meta.type)
-				}
-				output += storeOp(meta.type) + meta.reg  + ", " + hex(meta.address) + "(r0)\n"
-				valid.setOnlyMem
-			}
-			meta.reg = ""
-			valid.reg = false
-		}
-
-		return reg
-	}
-	
-	def storeOp(Type type) {
-		return switch(type) {
-					BoolType: "SB "
-					DoubleType: "FSW "
-					default: "SW "
-				}		
-	}
-	
-	def loadOp(Type type) {
-		return switch(type) {
-					BoolType: "LB "
-					DoubleType: "FLW "
-					default: "LW "
-				}		
-	}
-	
-	def allocateAddr(Type type) {
-		var temp = memoryAddr
-		memoryAddr += type.dataSize
-		return temp
-	}
-	
-	def MetaData getScalaMeta(Type type) {
-		var meta = new MetaData
-		meta.type = xsemantics.copytype(type).value
-		meta.address = allocateAddr(type)
-		return meta
-	}
-	
-	def hex(int dec) {
-		return "0x" + Integer.toHexString(dec)
-	}
-	
-	def writeFile() {
-		fsaGlobal.generateFile(fileName, output)
-	}
-	
-	def fetchConfig(EObject e, String item, String field) {
-		var opaque = config.get(item)
-		if (opaque === null) {
-			throw new IOException("[fetchConfig] Cannot find the configuration for " + item)
-		}
-		for (sec: opaque.field) {
-			if (sec.name.equals(field)) {
-				return sec.value.string ?: sec.value.inti / 20
-			}
-		}
+		return false
 	}
 }

@@ -4,7 +4,7 @@ import operations.*
 operation dummy(): unit
 {
 	using(q: qubit) {
-		X180(q);
+		X(q, 180.0);
 	}
 }
 
@@ -13,7 +13,7 @@ operation main(): (bool, int, int, int)
 	bool a;
 	int b;
 	int c;
-	int g = 2;
+	int g = 4;
 	
   	/*int[1][2][3] array;
   	array = {{{1}},{{2}},{{3,4}}};
@@ -38,7 +38,7 @@ operation main(): (bool, int, int, int)
 		H(q);
 		a = measure(q);
 		if (a) {
-			g = 1;
+			g = 3;
 		}
 	}
 

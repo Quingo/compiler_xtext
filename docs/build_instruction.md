@@ -46,8 +46,16 @@ You can install it following [https://maven.apache.org/install.html](https://mav
 
 ## Source Code Import
 1. Open the installed Eclipse, set a folder as the Workspace, and click Launch. Avoid having spaces (" ") in the Workspace path.
+
 2. Click *File* -> *Import* -> *General* -> *Existing Projects into Workspace* and click *Next*. In the pop-up dialog, click "*Browse...*". Select the *xtext\org.qdt.quingo.parent* folder in this repository. Next, check the *Search for nested projects* option, and you can find five items in the *project:* field. Select all the projects except the one having *.parent* suffix and click *Finish*.
+
 ![import_projects.png](import_projects.png)
+
+3. Right click on *org.qdt.quingo -> src -> org.qdt.quingo -> Quingo.xtext* and select *Run As -> Generate Xtext Artifacts*. After a while, Java files will be generated under *src-gen*, *xtend-gen*, and *xsemantics-gen* folders in the package explorer.
+
+![import_projects.png](gen_artifacts.png)
+
+Note that no errors should be reported after this step. Otherwise, please check and resolve the issues.
  
 ## Project Building
 Three types of targets can be built from this project, i.e., an Eclipse plugin, a standalone compiler, and a language server. 

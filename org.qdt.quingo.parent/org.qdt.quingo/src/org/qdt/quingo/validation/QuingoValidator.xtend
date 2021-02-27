@@ -10,7 +10,6 @@ import org.qdt.quingo.quingo.Expression
 import org.qdt.quingo.quingo.ExpTuple
 import org.qdt.quingo.quingo.ExpVariable
 import org.qdt.quingo.quingo.ArrayAccess
-import org.qdt.quingo.quingo.UsingStatement
 import org.qdt.quingo.quingo.SwitchStatement
 import org.qdt.quingo.quingo.BreakStatement
 import org.qdt.quingo.quingo.WhileStatement
@@ -110,17 +109,5 @@ class QuingoValidator extends QuingoSemanticsValidator {
 			return true
 		}
 		return false
-	}
-	
-	@Check
-	def checkUsing(UsingStatement using) {
-		if (using.qvar.length > 1) {
-			if (!using.left) {
-				error("Left parenthesis before \":\" is missing", using, QuingoPackage.Literals.USING_STATEMENT__RIGHT)
-			}
-			if (!using.right) {
-				error("Right parenthesis before \":\" is missing", using, QuingoPackage.Literals.USING_STATEMENT__LEFT)
-			}
-		}
 	}
 }

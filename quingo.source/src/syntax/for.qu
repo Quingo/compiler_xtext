@@ -1,6 +1,15 @@
 import operations.*
 
-operation main(): bool[]
+operation main(): int[]
+{
+	int[3] a = {-1, -1, -1};
+	for (int i=0; i<3; i+=1) {
+		a[i] = i;
+	}
+	return a;
+}
+
+/*operation main(): bool[]
 {
 	bool[3] b;
 	using((q, qa): (qubit, qubit[3])) {
@@ -17,4 +26,4 @@ operation main(): bool[]
 		}
 	}
 	return b;
-}
+}*/

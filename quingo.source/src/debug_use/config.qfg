@@ -1,0 +1,49 @@
+package  config.json
+
+{
+    "X": {
+        "duration": 20,
+        "type": "single-qubit-param",
+        "eqasm": "x"
+    },
+    "Y": {
+        "duration": 20,
+        "type": "single-qubit-param",
+        "eqasm": "y"
+    },
+    "Z": {
+        "duration": 20,
+        "type": "single-qubit-param",
+        "eqasm": "z"
+    },
+    "T": {
+        "duration": 20,
+        "type": "single-qubit",
+        "eqasm": "t"
+    },
+    "Tdg": {
+        "duration": 20,
+        "type": "single-qubit",
+        "eqasm": "tdg"
+    },
+    "S": {
+        "duration": 20,
+        "type": "single-qubit",
+        "eqasm": "S"
+    },
+	"H": {
+		"duration": 40,
+		"type": "single-qubit",
+		"eqasm": "H"
+	},
+	"CZ": {
+		"duration": 40,
+		"type": "two-qubit",
+		"eqasm": "CZ"
+	},
+	"measure": {
+		"duration": 600,
+		"type":"meas",
+		"eqasm":"MeasZ"
+	}
+}

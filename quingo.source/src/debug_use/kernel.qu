@@ -1,0 +1,48 @@
+import config.json.*
+import operations.*
+
+operation test_array_write(): (int[], int[][]) {
+	int out_size = 2;
+	int num_qubit = 2;
+
+	int[out_size] shape;
+
+	int[out_size][] res;
+	for (int i = 0; i < out_size; i += 1) {
+
+		using(q: qubit[num_qubit]) {
+			// 1. generate a random value `meas_res` of `num_qubit` bits, and
+			// each bit is generated using a QRNG.
+			init_all(q);
+			apply_all(H, q);
+			bool[] meas_res = meas_all(q);
+
+			// 2. store this random value plus 1 in shape[i]
+			int pow = 1;
+			shape[i] = 1;
+			for (int j = 0; j < q.length; j += 1) {
+				if (meas_res[j]) {
+					shape[i] += pow;
+				}
+				pow *= 2;
+			}
+		}
+
+		// the inner array is from 0 to random value
+		int[shape[i]] inner_res;
+		for (int j = 0; j < shape[i]; j += 1) {
+			inner_res[j] = j;
+		}
+
+		res[i] = inner_res;
+
+	}
+
+	return (shape, res);
+
+}
+
+
+operation main(): (int[], int[][]) {
+    return test_array_write();
+}

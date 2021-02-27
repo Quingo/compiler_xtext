@@ -1,0 +1,95 @@
+import vqe_operations.*
+import config.json
+
+opaque Y(q: qubit, angle: double): unit;
+opaque Z(q: qubit, angle: double): unit;
+
+operation X180(q: qubit) : unit {
+    X(q, 180.0);
+}
+
+operation X90(q: qubit) : unit {
+    X(q, 90.0);
+}
+
+operation Xm90(q: qubit) : unit {
+    X(q, -90.0);
+}
+
+operation Y90(q: qubit) : unit {
+    Y(q, 90.0);
+}
+
+operation Ym90(q: qubit) : unit {
+    Y(q, -90.0);
+}
+
+operation I(q: qubit) : unit {}
+
+operation parameterized_ansatz(q0: qubit, q1: qubit, theta: double) : unit {
+    Xm90(q0);
+    Y90(q1);
+    CNOT(q1, q0);
+    Z(q0, theta);
+    CNOT(q1, q0);
+    X90(q0);
+    Ym90(q1);
+}
+
+operation ansatz_n_measure(tomo_rot0: qubit->unit,
+                           tomo_rot1: qubit->unit,
+                           theta:     double) : bool[] {
+    using (q1: qubit){
+        using (q0: qubit) {
+            init(q0);
+            init(q1);           // Step (a): initialization
+            X180(q0);
+            parameterized_ansatz(q0, q1, theta); // Step (b)
+            tomo_rot0(q0);                     // Step (c): partial tomography
+            tomo_rot1(q1);
+            return {measure(q0), measure(q1)};
+        }
+    }
+}
+
+operation VQE_H2_kernel(nr_repetition: int, theta: double): bool[][][] {
+    // partial tomography for six Pauli pairs:
+    // I  I   : I I, Z0, Z1, Z0Z1
+    // X90X90 : Y0Y1
+    // H  H   : X0X1
+
+    // (qubit -> unit)[3][2] tomo_gates =
+    //     { {I, I}, {X(_, pi/2), X(_, pi/2)}, {H, H} };
+
+    bool[nr_repetition][2]    res_one_tomo;
+    bool[3][nr_repetition][2] res_partial;
+
+    // ------------------------ Step (e) ------------------------------------
+    for (int j = 0; j < nr_repetition; j += 1) {  // Step (d)
+        res_one_tomo[j] = ansatz_n_measure(I, I, theta);
+    }
+    res_partial[0] = res_one_tomo;
+
+    for (int j = 0; j < nr_repetition; j += 1) {  // Step (d)
+        res_one_tomo[j] = ansatz_n_measure(X90, X90, theta);
+    }
+    res_partial[1] = res_one_tomo;
+
+    for (int j = 0; j < nr_repetition; j += 1) {  // Step (d)
+        res_one_tomo[j] = ansatz_n_measure(H, H, theta);
+    }
+    res_partial[2] = res_one_tomo;
+    // ------------------------ Step (e) ------------------------------------
+
+    return res_partial;
+}
+
+operation main(): bool[][][] {
+	int var0_int;
+	var0_int = 1000;
+	
+	double var1_double;
+	var1_double = 30.0;
+	
+	return VQE_H2_kernel(var0_int,var1_double);
+}
