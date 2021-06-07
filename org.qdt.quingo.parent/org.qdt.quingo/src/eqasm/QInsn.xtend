@@ -11,67 +11,10 @@ import eqasm.EqasmBase
 import eqasm.QuantumOperationBase
 import java.util.HashSet
 
-class QInsn {
 
-	def static void main (String[] args) {
-		testBundle()
-	}
-	
-	def testConversion() {
-		var ArrayList<Integer> intArray = new ArrayList<Integer>
-	  	intArray.add(1)
-	  	intArray.add(3)
-	  	intArray.add(3)
-	  	intArray.add(4)
-	  	intArray.add(3)
-		val intSet = EqasmSmis.intListToSet(intArray)
-		for(i: intSet) {
-			println(i)
-		}
-	}
-	
-	def static testBundle() {
-	  	val rd = new GPR(1)
-//	  	val rs = new GPR(2)
-//	  	val rt = new GPR(31)
-	  	val si = new Qotrs(13)
-	  	val s0 = new Qotrs(0)
-	  	val ti = new Qotrt(15)
-//	  	val Integer[] qArray= #{1, 2, 3, 6, 9}
-	  	var ArrayList<Integer> qArray = new ArrayList<Integer>
-	  	qArray.add(1)
-	  	var SingleQubitGate gate1 = new SingleQubitGate('h', si)
-	  	var SingleQubitGate gate2 = new SingleQubitGate('x180', s0)
-	  	var meas = new Measurement(si)
-	  	var cnot = new TwoQubitGate('cnot', ti)
-	  	var tqArray = new ArrayList<QuantumOperationBase>()
-	  	tqArray.add(gate1)
-  		tqArray.add(gate2)
-		tqArray.add(meas)
-		tqArray.add(cnot)
-	  			
-	  	
-	  	val qubit_pair1 = new QubitPair(0, 1)
-	  	val qubit_pair2 = new QubitPair(2, 3)
-	  	val QubitPair[] qPairArray = #{qubit_pair1, qubit_pair2}
-	  	
-		var lwstArray = new ArrayList<EqasmBase>
-		lwstArray.add(new EqasmQwait(10))
-		lwstArray.add(new EqasmQwaitr(rd))
-		lwstArray.add(new EqasmSmis(si, qArray))
-		lwstArray.add(new EqasmSmit(ti, qPairArray))
-		lwstArray.add(new EqasmQBundle(6, tqArray))
-		
-		var flexBundle = new EqasmQBundle()
-		flexBundle.addOp('Kun', si)
-		flexBundle.addOp('Xiang', ti)
-		lwstArray.add(flexBundle)
-		lwstArray.add(new EqasmQBundle(1, 'Xiangkun', si))
-		lwstArray.forEach[println(str())]
-	}
-}
-
-// qwait imm
+/**
+ * eQASM qwait instruction.
+ */
 class EqasmQwait extends EqasmBase {
 	ImmValue imm
 	
@@ -84,7 +27,10 @@ class EqasmQwait extends EqasmBase {
 		return String.format('%s %s', getInsnName, imm.str)
 	}
 }
-// qwaitr rs
+
+/**
+ * eQASM qwaitr instruction.
+ */
 class EqasmQwaitr extends EqasmBase {
 	GPR rs 
 	
@@ -97,17 +43,20 @@ class EqasmQwaitr extends EqasmBase {
 		return String.format('%s %s', getInsnName, rs.str)
 	}
 }
-// smis si, sq_list
+
+/**
+ * eQASM smis instruction.
+ */
 class EqasmSmis extends EqasmBase {
 	Qotrs si
 	Set<Integer> SingleQubitList
 	
-	// TODO: check the range of each qubit index
 	new (Qotrs _si, Integer[] _qubits) {
 		this.si = _si
 		this.SingleQubitList = intListToSet(_qubits)
 		this.setInsnName('smis')
 	}
+
 	new (Qotrs _si, ArrayList<Integer> _qubits) {
 		this.si = _si
 		this.SingleQubitList = intListToSet(_qubits)
@@ -132,19 +81,21 @@ class EqasmSmis extends EqasmBase {
 		return String.format('%s %s, %s', getInsnName, si.str, getStrQubitList)
 	}
 }
-//eqasm_insn.SMIT: ['ti', 'tq_list']
+
+/**
+ * eQASM smit instruction.
+ */
 class EqasmSmit extends EqasmBase {
 	Qotrt ti
 	Set<QubitPair> QubitPairList
 	
-	// TODO: check the range of each qubit index in the qubit pair list
 	new (Qotrt _ti, ArrayList<QubitPair> _QubitPairs) {
 		this.ti = _ti
 		this.QubitPairList = new HashSet<QubitPair>()
-//		_QubitPairs.forEach[this.QubitPairList.add(it)]
 		QubitPairList = qubitPairListToSet(_QubitPairs)
 		this.setInsnName('smit')
 	}
+	
 	new (Qotrt _ti, QubitPair[] _QubitPairs) {
 		this.ti = _ti
 		this.QubitPairList = qubitPairListToSet(_QubitPairs);
@@ -180,7 +131,11 @@ class EqasmSmit extends EqasmBase {
 	}
 }
 
-//# quantum bundles: 1, op1 (s/t)reg1 | op2 (s/t)reg2
+/**
+ * eQASM quantum bundles.
+ * <p>
+ * Example: 1, op1 (s/t)reg1 | op2 (s/t)reg2
+ */
 class EqasmQBundle extends EqasmBase {
 	public var Integer PreInterval = 0
 	public var ArrayList<QuantumOperationBase> QOps
@@ -228,9 +183,6 @@ class EqasmQBundle extends EqasmBase {
 	}
 	
 	override String str() {
-//		if (PreInterval == 1) {
-//			return String.format(String.join(' | ', QOps.map[it.str]))
-//		}
 		return String.format("%d, %s", PreInterval, String.join(' | ', QOps.map[it.str]))
 	}
 }

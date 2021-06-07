@@ -4,9 +4,12 @@ import eqasm.GPR
 import eqasm.Qotrs
 import eqasm.Qotrt
 import eqasm.QR
-import org.junit.jupiter.api.Assertions
 
-
+/**
+ * Convert a {@code String} into a {@code eqasm.register}.
+ * 
+ * @author Xiang Fu
+ */
 class StringToReg {
     def static intFromString(String intStr) {
         try {
@@ -22,7 +25,6 @@ class StringToReg {
     }
 
 	def static int getIndex(String StrReg, String abbr) {
-		Assertions.assertTrue(StrReg.toLowerCase().startsWith(abbr))
      	val StrRegIndex = StrReg.substring(1, StrReg.length())
      	return intFromString(StrRegIndex)
 	}

@@ -7,6 +7,15 @@ import org.eclipse.xtext.generator.OutputConfiguration
 import org.eclipse.xtext.generator.IFileSystemAccess
 import static com.google.common.collect.Sets.newHashSet
 
+/**
+ * Set the default output folder for the generated eQASM file.
+ * <p>
+ * Without overriding the {@code OutputConfigurationProvider}, the default output folder would be
+ * 'src-gen'. Here, we set it to '.', i.e., the current folder, which allows the user to specify
+ * any output folder via the {@code Configuration} class.
+ * 
+ * @author Jintao Yu
+ */
 class QuingoOutputConfigurationProvider extends OutputConfigurationProvider {
 	override getOutputConfigurations() {
 		var OutputConfiguration defaultOutput = new OutputConfiguration(IFileSystemAccess.DEFAULT_OUTPUT);
@@ -19,9 +28,11 @@ class QuingoOutputConfigurationProvider extends OutputConfigurationProvider {
 		defaultOutput.setKeepLocalHistory(true);
 		return newHashSet(defaultOutput);
 	}
+
 	override getOutputConfigurations(Resource context) {
 		getOutputConfigurations
 	}
+
 	override getOutputConfigurations(ResourceSet context) {
 		getOutputConfigurations
 	}

@@ -1,12 +1,8 @@
 package eqasm
 
-
-//enum QOpType {
-//	SINGLE_QUBIT_GATE,
-//	TWO_QUBIT_GATE,
-//	MEASUREMENT
-//}
-
+/**
+ * Quantum operation base class.
+ */
 abstract class QuantumOperationBase {
 	var String name
 	new (String _name) {
@@ -24,6 +20,9 @@ abstract class QuantumOperationBase {
 	def String str()
 }
 
+/**
+ * Represent single qubit gates.
+ */
 class SingleQubitGate extends QuantumOperationBase {
 	public var Qotrs SReg
 	
@@ -37,6 +36,9 @@ class SingleQubitGate extends QuantumOperationBase {
 	}
 }
 
+/**
+ * Represent measurement.
+ */
 class Measurement extends QuantumOperationBase {
 	public var Qotrs SReg
 	
@@ -50,7 +52,9 @@ class Measurement extends QuantumOperationBase {
 	}
 }
 
-
+/**
+ * Represent two-qubit gates.
+ */
 class TwoQubitGate extends QuantumOperationBase {
 	public var Qotrt TReg
 	

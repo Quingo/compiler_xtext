@@ -3,10 +3,6 @@ import org.junit.jupiter.api.Assertions
 import java.util.ArrayList
 import org.eclipse.xtext.generator.IFileSystemAccess2
 
-class InstructionBase {
-
-}
-
 interface EqasmInterface{
 	def void setInsnName(String _name)
 	def String getInsnName()
@@ -16,9 +12,11 @@ interface EqasmInterface{
 	def void setLabel(String _label)
 }
 
+/**
+ * Base class of eQASM instructions
+ */
 abstract class EqasmBase implements EqasmInterface {
 	public String name
-	// for now, one instruction has at most one label
 	public String label
 	public String trailingComment
 	public static ArrayList<EqasmBase> insnCollection = new ArrayList<EqasmBase>
@@ -27,7 +25,9 @@ abstract class EqasmBase implements EqasmInterface {
 		insnCollection.add(this)
 	}
 
-    /** Clear instructions collected in `insnCollection`. */
+    /** 
+     * Clear instructions collected in `insnCollection`.
+     */
 	def static void resetInsn() {
 		insnCollection.clear()
 	}
@@ -75,7 +75,10 @@ abstract class EqasmBase implements EqasmInterface {
 	override setLabel(String _label) {this.label = _label}
 }
 
-class EqasmPureLabel extends EqasmBase {  // a mock instruction used to store a label
+/**
+ * A mock instruction used to store a label
+ */
+class EqasmPureLabel extends EqasmBase {
 	new (String _label) {
 		setLabel(_label)
 	}
@@ -85,7 +88,10 @@ class EqasmPureLabel extends EqasmBase {  // a mock instruction used to store a 
 	}
 }
 
-class EqasmComment extends EqasmBase {  // a mock instruction used to store one line comment
+/**
+ * A mock instruction used to store one line comment
+ */
+class EqasmComment extends EqasmBase {
 	String comment
 	new (String _comment) {
 		comment = _comment
@@ -96,6 +102,9 @@ class EqasmComment extends EqasmBase {  // a mock instruction used to store one 
 	}
 }
 
+/**
+ * Represent an immediate value.
+ */
 class ImmValue {
 	int imm
 	final int width
@@ -108,7 +117,6 @@ class ImmValue {
 
 	new(int _value) {
 		val _width = 32
-//		Assertions.assertTrue(_value >= 2 ** (_width - 1) || _value < - 2 ** (_width - 1))
 		this.width = _width
 		this.imm = _value
 	}

@@ -211,5 +211,10 @@
             <artifactId>it.xsemantics.runtime</artifactId>
             <version>${xsemantics.version}</version>
         </dependency>
+		<dependency>
+			<groupId>org.junit.jupiter</groupId>
+			<artifactId>junit-jupiter-api</artifactId>
+			<version>5.5.1</version>
+		</dependency>
 	</dependencies>
 </project>

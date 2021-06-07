@@ -2,7 +2,6 @@ package eqasm
 
 import eqasm.EqasmBase
 
-// NOP
 class EqasmNop extends EqasmBase {
 	new () {
 		this.setInsnName('nop')
@@ -13,7 +12,6 @@ class EqasmNop extends EqasmBase {
 	}
 }
 
-// STOP
 class EqasmStop extends EqasmBase {
 	new () {
 		this.setInsnName('stop')
@@ -24,8 +22,10 @@ class EqasmStop extends EqasmBase {
 	}
 }
 
-
-class ThreeGprBase  extends EqasmBase {
+/**
+ * Base class for eQASM instructions that use three GPRs.
+ */
+class ThreeGprBase extends EqasmBase {
 	GPR rd
 	GPR rs
 	GPR rt
@@ -61,30 +61,35 @@ class EqasmOr extends ThreeGprBase {
 		setInsnName('or')
 	}
 }
+
 class EqasmXor extends ThreeGprBase {
 	new (GPR _rd, GPR _rs, GPR _rt) {
 		super(_rd, _rs, _rt)
 		setInsnName('xor')
 	}
 }
+
 class EqasmAnd extends ThreeGprBase {
 	new (GPR _rd, GPR _rs, GPR _rt) {
 		super(_rd, _rs, _rt)
 		setInsnName('and')
 	}
 }
+
 class EqasmMul extends ThreeGprBase {
 	new (GPR _rd, GPR _rs, GPR _rt) {
 		super(_rd, _rs, _rt)
 		setInsnName('mul')
 	}
 }
+
 class EqasmDiv extends ThreeGprBase {
 	new (GPR _rd, GPR _rs, GPR _rt) {
 		super(_rd, _rs, _rt)
 		setInsnName('div')
 	}
 }
+
 class EqasmRem extends ThreeGprBase {
 	new (GPR _rd, GPR _rs, GPR _rt) {
 		super(_rd, _rs, _rt)
@@ -92,7 +97,11 @@ class EqasmRem extends ThreeGprBase {
 	}
 }
 
-//eqasm_insn.LDUI: ['rd', 'rs', 'imm'],  # LDUI rd, rs, imm15
+/**
+ * eQASM LDUI instruction.
+ * <p>
+ * LDUI rd, rs, imm
+ */
 class EqasmLdui extends EqasmBase {
 	GPR rd 
 	GPR rs
@@ -108,7 +117,11 @@ class EqasmLdui extends EqasmBase {
 	}
 }
 
-//eqasm_insn.ADDI: ['rd', 'rs', 'imm'],  # ADDI Rd, Rs, imm
+/**
+ * eQASM ADDI instruction.
+ * <p>
+ * ADDI Rd, Rs, imm
+ */
 class EqasmAddi extends EqasmBase {
 	GPR rd 
 	GPR rs
@@ -124,8 +137,11 @@ class EqasmAddi extends EqasmBase {
 	}
 }
 
-
-// eqasm_insn.LDI: ['rd', 'imm'],  # LDI Rd, Imm20
+/**
+ * eQASM LDI instruction.
+ * <p>
+ * LDI Rd, Imm20
+ */
 class EqasmLdi extends EqasmBase {
 	GPR rd 
 	ImmValue imm
@@ -142,7 +158,11 @@ class EqasmLdi extends EqasmBase {
 }
 
 
-// NOT Rd, Rt
+/**
+ * eQASM NOT instruction.
+ * <p>
+ * NOT Rd, Rt
+ */
 class EqasmNot extends EqasmBase {
 	GPR rd
 	GPR rt 
@@ -157,9 +177,11 @@ class EqasmNot extends EqasmBase {
 	}
 }
 
-
-
-// fmr rd, qs
+/**
+ * eQASM fmr instruction.
+ * <p>
+ * fmr rd, qs
+ */
 class EqasmFmr extends EqasmBase {
 	GPR rd
 	QR qs

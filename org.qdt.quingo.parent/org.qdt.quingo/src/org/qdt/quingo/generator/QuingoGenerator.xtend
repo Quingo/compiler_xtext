@@ -4,8 +4,6 @@
 package org.qdt.quingo.generator
 
 import com.google.inject.Inject
-import eqasm.FPR
-import eqasm.GPR
 import eqasm.QubitPair
 import java.io.IOException
 import java.util.ArrayList
@@ -15,6 +13,7 @@ import org.eclipse.emf.common.util.EList
 import org.eclipse.emf.common.util.URI
 import org.eclipse.emf.ecore.EObject
 import org.eclipse.emf.ecore.resource.Resource
+import org.eclipse.emf.ecore.resource.ResourceSet
 import org.eclipse.emf.ecore.util.EcoreUtil
 import org.eclipse.xtext.generator.AbstractGenerator
 import org.eclipse.xtext.generator.IFileSystemAccess2
@@ -22,7 +21,59 @@ import org.eclipse.xtext.generator.IGeneratorContext
 import org.eclipse.xtext.nodemodel.ICompositeNode
 import org.eclipse.xtext.nodemodel.util.NodeModelUtils
 import org.junit.jupiter.api.Assertions
-import org.qdt.quingo.quingo.*
+import org.qdt.quingo.quingo.Add
+import org.qdt.quingo.quingo.And
+import org.qdt.quingo.quingo.ArrayAccess
+import org.qdt.quingo.quingo.ArrayType
+import org.qdt.quingo.quingo.Assignment
+import org.qdt.quingo.quingo.BlockStatement
+import org.qdt.quingo.quingo.BoolType
+import org.qdt.quingo.quingo.BooleanLiteral
+import org.qdt.quingo.quingo.BreakStatement
+import org.qdt.quingo.quingo.ContinueStatement
+import org.qdt.quingo.quingo.DoubleLiteral
+import org.qdt.quingo.quingo.DoubleType
+import org.qdt.quingo.quingo.EmptyStatement
+import org.qdt.quingo.quingo.Equal
+import org.qdt.quingo.quingo.ExpArray
+import org.qdt.quingo.quingo.ExpFunctionCall
+import org.qdt.quingo.quingo.ExpLength
+import org.qdt.quingo.quingo.ExpTuple
+import org.qdt.quingo.quingo.ExpVariable
+import org.qdt.quingo.quingo.Expression
+import org.qdt.quingo.quingo.ForStatement
+import org.qdt.quingo.quingo.FormalParameter
+import org.qdt.quingo.quingo.FunDeclaration
+import org.qdt.quingo.quingo.FunctionCall
+import org.qdt.quingo.quingo.FunctionType
+import org.qdt.quingo.quingo.IfStatement
+import org.qdt.quingo.quingo.IntLiteral
+import org.qdt.quingo.quingo.IntType
+import org.qdt.quingo.quingo.LocalVarDecl
+import org.qdt.quingo.quingo.Mult
+import org.qdt.quingo.quingo.NEqual
+import org.qdt.quingo.quingo.OpAssignment
+import org.qdt.quingo.quingo.Opaque
+import org.qdt.quingo.quingo.Or
+import org.qdt.quingo.quingo.Program
+import org.qdt.quingo.quingo.QubitType
+import org.qdt.quingo.quingo.QuingoFactory
+import org.qdt.quingo.quingo.ReturnStatement
+import org.qdt.quingo.quingo.Statement
+import org.qdt.quingo.quingo.SwitchStatement
+import org.qdt.quingo.quingo.TimerDeclaration
+import org.qdt.quingo.quingo.TimingConstraint
+import org.qdt.quingo.quingo.ToDouble
+import org.qdt.quingo.quingo.ToInt
+import org.qdt.quingo.quingo.TupleType
+import org.qdt.quingo.quingo.Type
+import org.qdt.quingo.quingo.Unary
+import org.qdt.quingo.quingo.UnitType
+import org.qdt.quingo.quingo.UsingStatement
+import org.qdt.quingo.quingo.Variable
+import org.qdt.quingo.quingo.VariableInit
+import org.qdt.quingo.quingo.WaitStatement
+import org.qdt.quingo.quingo.WhileStatement
 import org.qdt.quingo.typing.QuingoSemantics
 
 import static org.qdt.quingo.generator.Configuration.*
@@ -30,53 +81,144 @@ import static org.qdt.quingo.generator.EqasmBackend.*
 import static org.qdt.quingo.generator.StringToReg.*
 
 import static extension org.qdt.quingo.generator.Serializer.*
-import org.qdt.quingo.quingo.Statement
-import java.util.ListIterator
-import org.eclipse.emf.ecore.resource.ResourceSet
 
 /**
- * Generates code from your model files on save.
- *
- * See https://www.eclipse.org/Xtext/documentation/303_runtime_concepts.html#code-generation
+ * Generates eQASM code from AST.
+ * 
+ * @author Jintao Yu, Xiang Fu
  */
 class QuingoGenerator extends AbstractGenerator {
-    // definition of constants
+
+    /**
+     * Create an IntType
+     */
     static val QuingoIntType    = QuingoFactory::eINSTANCE.createIntType
+
+    /**
+     * Create a BoolType
+     */
     static val QuingoBoolType   = QuingoFactory::eINSTANCE.createBoolType
+
+    /**
+     * Create a QubitType
+     */
     static val QuingoQubitType  = QuingoFactory::eINSTANCE.createQubitType
+
+    /**
+     * Create a DoubleType
+     */
     static val QuingoDoubleType = QuingoFactory::eINSTANCE.createDoubleType
 
-    // global variables
-    int sIndex // the first unused S register
-    int iIndex // the first unused R register
-    int fIndex // the first unused F register
-    int duration // the duration of current quantum operation
+    /**
+     * the first unused S register
+     */
+    int sIndex
 
-    int ifIndex		// used for the generated labels related to IF structures
-    int whileIndex	// used for the generated labels related to WHILE and FOR structures
-    int switchIndex // used for the generated labels related to SWITCH structures
-    int arrayIndex	// used for the generated labels related to array allocation
-    int funIndex	// used for the generated labels related to function calls
+    /**
+     * the first unused R register
+     */
+    int iIndex
 
-    HashMap<String, Opaque> config		// opaque gates configuration
-    HashMap<EObject, Integer> mapAstNodeToIndex	// match an AST node to its index
-    HashMap<WhileStatement, HashSet<String>> mapWhileToVarSet // record the variables assigned in a loop body
-    HashMap<String, MetaData> mapRegToMetadata	// record the MetaData that is stored in the registers
+    /**
+     * the first unused F register
+     */
+    int fIndex
+
+    /**
+     * the duration of current quantum operation
+     */
+    int duration
+
+	/**
+	 * the index of IfStatement
+	 */
+    int ifIndex
+
+	/**
+	 * the index of WhileStatement
+	 */
+    int whileIndex
+    
+    /**
+     * the index of SwitchStatement
+     */
+    int switchIndex
+    
+    /**
+     * the index of arrays
+     */
+    int arrayIndex
+    
+    /**
+     * the index of non-opaque function calls
+     */
+    int funIndex
+
+	/**
+	 * opaque gates configuration 
+	 */
+    HashMap<String, Opaque> config
+    
+    /**
+     * match an AST node to its index
+     */
+    HashMap<EObject, Integer> mapAstNodeToIndex
+    
+    /**
+     * record the variables assigned in a loop body
+     */
+    HashMap<WhileStatement, HashSet<String>> mapWhileToVarSet
+    
+    /**
+     * record the MetaData that is stored in the registers
+     */
+    HashMap<String, MetaData> mapRegToMetadata
+    
+    /**
+     * record the index of a timer
+     */
     HashMap<TimerDeclaration, Integer> timerMap
 
-    int memoryAddr	                    // the starting address of the free memory space
+	/**
+	 * the starting address of the free memory space
+	 */
+    int memoryAddr
+    
+    /**
+     * the IFileSystemAccess2 passed to doGenerate
+     */
     IFileSystemAccess2 fsaGlobal
+    
+    /**
+     * the name of the generated eQASM file
+     */
     String fileName
-    Boolean bExprOnLeftSide  // specify whether the current expression is on the left side in an assignment statement
+    
+    /**
+     * specify whether the current expression is on the left side in an assignment statement
+     */
+    Boolean bExprOnLeftSide
+    
+    /**
+     * record the global time
+     */
     int global
 
-    var vscode = false
-
-
-
+	/**
+	 * the type system of Quingo
+	 * <p>
+	 * It contains functions and validations related to types.
+	 */
     @Inject	QuingoSemantics xsemantics
 
-    override void doGenerate(Resource resource, IFileSystemAccess2 fsa, IGeneratorContext context) {
+	/**
+	 * The entry point of QuingoGenerator class.
+	 * 
+	 * @param resource  the source file being compiled
+	 * @param fsa       the file system to write the generated file
+	 * @param context   not used
+	 */
+     override void doGenerate(Resource resource, IFileSystemAccess2 fsa, IGeneratorContext context) {
 
         // Global variable initialization
         sIndex = 0
@@ -107,6 +249,7 @@ class QuingoGenerator extends AbstractGenerator {
         var resourceSet = resource.resourceSet
         resourceSet.decomposeForLoop
 
+		// search and process the configuration files
         for (res : resourceSet.resources) {
             if (res.URI.fileExtension == "qfg") {
                 var prog = res.contents.head as Program
@@ -125,7 +268,7 @@ class QuingoGenerator extends AbstractGenerator {
                     }
                     if (measure && value < 60) {
                         System.err.println("Measure's duration is not allowed to be under 60!")
-                        Configuration.exitCode = -6
+                        Configuration.exitCode = -2
                         return
                     }
 
@@ -134,27 +277,22 @@ class QuingoGenerator extends AbstractGenerator {
             }
         }
 
+		// search and process the configuration files
         for (nodeFuncDecl : resource.allContents.toIterable.filter(FunDeclaration)) {
-
             if (nodeFuncDecl.name.equals("main")) {
-
                 var index = funIndex++
                 mapAstNodeToIndex.put(nodeFuncDecl, index)
                 addInitInstructions()
 
-                if (vscode) {
-                    System.err.println("input: " + resource.URI);
-                    for (res : resourceSet.resources) {
-                        System.err.println("Resource set: " + res.URI);
-                    }
-                }
-
+				// decide the name of the output file
                 if (Configuration.outputFile != "") {
                     fileName = Configuration.outputFile
                 }
                 else {
                     fileName = "build/" + resource.URI.trimFileExtension.lastSegment + ".eqasm"
                 }
+                
+                // the actual compilation
                 try {
                     var map = new HashMap<String, MetaData>
                     for (par: nodeFuncDecl.pars) {
@@ -166,68 +304,48 @@ class QuingoGenerator extends AbstractGenerator {
                     e.printStackTrace()
                     System.err.println("Except happens at line number: " + e.getStackTrace.get(0).getLineNumber)
 
-                    Configuration.exitCode = -6
+                    Configuration.exitCode = -2
                 }
 
                 addEndInstructions()
-
                 writeInsnToFile()
             }
-        }
-
-    }
-
-    /**
-     * Replace a number of old statements with a number of new statements within a statement group.
-     *
-     * @param statementGroup: the statement group which contains the old statements and shall be inserted
-     *                          with the new statements
-     * @param iPosition:      the starting position of the old statements in the statement group
-     * @param iNumofOld:      the number of old statements
-     * @param newStatements:  the new statements to insert.
-     */
-    def replaceStatementInGroup(EList<Statement> statementGroup,
-                                int iPosition, int iNumOfOld,  ArrayList<Statement> newStatements) {
-        for (var i = 0; i < iNumOfOld; i++) {
-            statementGroup.remove(iPosition)
-        }
-
-        newStatements.reverse.forEach[statementGroup.add(iPosition, it)]
-    }
-    
-    def updateStatement(ListIterator<Statement> iter, ArrayList<Statement> newStatements) {
-        iter.remove()
-
-        for(statement : newStatements) {
-            iter.add(statement)
         }
     }
 
     /**
      * Replace a ForStatement with an equivalent WhileStatement
-     *
+     * <p>
      * A ForStatement has the following structure:
-     * ```
+     * <pre>
      *   "for" "(" initExpression=ForInitStatment condExpression=Expression ";" loopExpression=StatementNoColon? ")"
-     *     loopBody=BlockStatement;
-     * ```
+     *     loopBody=BlockStatement;</pre>
      *
      * The decomposition will result in the following structure:
+     * <pre>
      *    ForInitStatment
      *    "while (" condExpression ") {"
      *      loopBody.stats
      *      loopExpression
-     *    "}"
+     *    "}"</pre> 
+     * @param rs  the ResourceSet of the project
      */
     def void decomposeForLoop(ResourceSet rs) {
         for (res : rs.resources) {
         	var prog = res.contents.head as Program
-        	for (element: prog?.elements) {
-        		element.fun?.block?.decomposeForLoop
+        	if (prog !== null && prog.elements !== null) {
+	        	for (element: prog.elements) {
+	        		element?.fun?.block?.decomposeForLoop
+	        	}
         	}
         }
     }
     
+    /**
+     * Replace a ForStatement with an equivalent WhileStatement.
+     * 
+     * @param blockStatment  a BlockStatment that may contain a for-loop
+     */
     def void decomposeForLoop(BlockStatement blockStatement) {
     	var statList = blockStatement.stats
     	for (var i = 0; i < statList.length; i++) {
@@ -267,33 +385,48 @@ class QuingoGenerator extends AbstractGenerator {
     	}
     }
 
+	/**
+	 * Compile a FormalParameter.
+	 * 
+	 * @param nodeFormalParam  an AST node of FormalParameter type
+	 * @param map              the symbol table of current operation
+	 * @return                 a MetaData that contains the parameter's information
+	 */
     def dispatch MetaData compile(FormalParameter nodeFormalParam, HashMap<String, MetaData> map) {
-
+    	
+    	// rename a parameter that has the same name as previous variables
         while (map.containsKey(nodeFormalParam.name)) {
             nodeFormalParam.name = nodeFormalParam.name + "-2";
         }
-        var meta = allocRegForVariable(nodeFormalParam.name, nodeFormalParam.type, map)
-
-
-        return meta
+        
+        return allocRegForVariable(nodeFormalParam.name, nodeFormalParam.type, map)
     }
 
+	/**
+	 * Compile a LocalVarDecl.
+	 * 
+	 * @param nodeVarDecl  an AST node of LocalVarDecl type
+	 * @param map          the symbol table of current operation
+	 * @return             null
+	 */
     def dispatch MetaData compile(LocalVarDecl nodeVarDecl, HashMap<String, MetaData> map) {
-
         for (init: nodeVarDecl.init) {
             init.compile(map)
         }
-
         return null
     }
 
-    /**
-     * VariableInit:
-     *  varName=VariableName ("=" value=Expression)?;
-     */
+	/**
+	 * Compile a VariableInit.
+	 * 
+	 * @param nodeVarWithInit  an AST node of VariableInit type
+	 * @param map              the symbol table of current operation
+	 * @return                 a MetaData that contains the variable's information
+	 */
     def dispatch MetaData compile(VariableInit nodeVarWithInit, HashMap<String, MetaData> map) {
+        var varName = nodeVarWithInit.varName
 
-        var varName = nodeVarWithInit.varName  // if this name is already used, rename it.
+    	// rename a variable that has the same name as previous variables
         while (map.containsKey(varName.name)) {
             varName.name = varName.name + "-2";
         }
@@ -305,18 +438,24 @@ class QuingoGenerator extends AbstractGenerator {
             assignMetaData(meta, nodeVarWithInit.value.compile(map), typeVariable,
                            NodeModelUtils.getNode(nodeVarWithInit))
         }
-
         return meta
     }
 
-    /**
-     * BlockStatement:
-     *   {BlockStatement} "{" (stats += Statement)* "}";
-     */
+	/**
+	 * Compile a BlockStatement.
+	 * <p>
+	 * The statements contained in the BlockStatment are compiled sequentially. However,
+	 * ReturnStatement may interrupt it.
+	 * 
+	 * @param stat  an AST node of BlockStatement type
+	 * @param map   the symbol table of current operation
+	 * @return      a MetaData if containing ReturnStatment, ContinueStatement, or BreakStatement; otherwise, null
+	 */
     def dispatch MetaData compile(BlockStatement stat, HashMap<String, MetaData> map) {
         if (stat.stats !== null) {
             for (st: stat.stats) {
                 var meta = st.compile(map)
+                
                 // only return statements and structures containing 'return' will return non-null meta
                 if (meta !== null) {
                     return meta
@@ -326,29 +465,55 @@ class QuingoGenerator extends AbstractGenerator {
         return null
     }
 
+	/**
+	 * Compile a WaitStatement.
+	 * 
+	 * @param stat  an AST node of WaitStatement type
+	 * @param map   the symbol table of current operation
+	 * @return      null
+	 * 
+	 * @deprecated  WatiStatment is replaced by timing constraints.
+	 */
     def dispatch MetaData compile(WaitStatement stat, HashMap<String, MetaData> map) {
-        var metaWaitTime = stat.lis.get(stat.lis.length - 1).compile(map)
-
-        genInsnWait(metaWaitTime)
-
+    	var metaWaitTime = stat.lis.get(stat.lis.length - 1).compile(map)
+        if (metaWaitTime.valid.constant) {      // if the waiting time is already known
+            val immWaitTime = metaWaitTime.value as Integer
+            genInsnWait(immWaitTime)
+        } 
+        else {                                // otherwise, in the register (int-type meta)
+            var reg = metaWaitTime.register
+            genInsnWait(reg)
+        }
         return null
     }
 
+	/**
+	 * Compile a ReturnStatement.
+	 * <p>
+	 * This function behaves differently depending on whether the contain operation is "main".
+	 * If it is the main operation, the returned values are written to the shared memory.
+	 * Otherwise, it is returned in the form of a MetaData.
+	 * 
+	 * @param stat  an AST node of ReturnStatement type
+	 * @param map   the symbol table of current operation
+	 * @return      the MetaData compiled from the returned expression
+	 */
     def dispatch MetaData compile(ReturnStatement retStat, HashMap<String, MetaData> map) {
-
         var container = retStat.eContainer
-        // return can be within a function through multiple levels of blocks
+        
+        // find the FunDeclaration that the ReturnStatement belongs to
         while (!(container instanceof FunDeclaration)) {
             container = container.eContainer
         }
 
         var MetaData metaRetValue = null
-
-        if (retStat.value !== null) {
-
+        if (retStat.value === null) {
+            metaRetValue = new MetaData // use a fresh new metadata to represent the returned nothing.
+        }
+        else {  // retStat.value !== null
             metaRetValue = retStat.value.compile(map)
-            var fun = container as FunDeclaration
 
+            var fun = container as FunDeclaration
             if (fun.name.equals("main")) {
                 // serialize and export the data to shared memory using exportMetaData
                 var metaMockStackPtr   = new MetaData
@@ -370,59 +535,111 @@ class QuingoGenerator extends AbstractGenerator {
 
                 metaMockHeapPtr.valid.setOnlyReg
                 exportMetaData(metaMockStackPtr, metaMockHeapPtr, metaRetValue, fun.type)
-
-            } else {                    // not main function
-
+            }
+            else {  // not main function
                 if (!(fun.type instanceof UnitType)) {
                     var ret = map.get("return")
                     assignMetaData(ret, metaRetValue, fun.type, NodeModelUtils.getNode(retStat))
                 }
             }
-        } else {
-            metaRetValue = new MetaData // use a fresh new metadata to represent the returned nothing.
         }
-        var index = mapAstNodeToIndex.get(container)
-        jumpToFunctionEnd(index)
+        // jump to function end
+        var funcEndLabel = genFuncEndLabel(mapAstNodeToIndex.get(container))
+        insertQasmGoto(funcEndLabel)
 
         return metaRetValue
     }
 
+	/**
+	 * Compile a FunctionCall.
+	 * 
+	 * @param call  an AST node of FunctionCall type
+	 * @param map   the symbol table of current operation
+	 * @return      null
+	 */
     def dispatch MetaData compile(FunctionCall call, HashMap<String, MetaData> map) {
     	call.exp.compile(map)
         return null
     }
 
+	/**
+	 * Compile a ContinueStatement.
+	 * 
+	 * @param stat  an AST node of ContinueStatement type
+	 * @param map   the symbol table of current operation
+	 * @return      a dummy MetaData indicating an interruption of sequential execution
+	 * 
+	 * @see #compile(WhileStatement, HashMap<String, MetaData>)
+	 */
     def dispatch MetaData compile(ContinueStatement stat, HashMap<String, MetaData> map) {
+    	
+    	// find the right container
         var container = stat.eContainer
         while (!(container instanceof WhileStatement || container instanceof ForStatement)) {
             container = container.eContainer
         }
+        
         var continueindex = mapAstNodeToIndex.get(container)
-        if (continueindex.intValue > 0) {   // check why this checking is required
+        if (continueindex.intValue > 0) {
 	        var varSet = mapWhileToVarSet.get(container)
 	        storeVarsToMem(varSet, map, false)
-            jumpBackToLoopStart(continueindex)
+            
+            // jump back to loop start
+	        var loopStartLabel = genLoopStartLabel(continueindex)
+	        insertQasmGoto(loopStartLabel)
         }
         return new MetaData
     }
 
+	/**
+	 * Compile a BreakStatement.
+	 * 
+	 * @param stat  an AST node of BreakStatement type
+	 * @param map   the symbol table of current operation
+	 * @return      a dummy MetaData indicating an interruption of sequential execution
+	 * 
+	 * @see #compile(WhileStatement, HashMap<String, MetaData>)
+	 */
     def dispatch MetaData compile(BreakStatement stat, HashMap<String, MetaData> map) {
+
+    	// find the right container
         var container = stat.eContainer
         while (!(container instanceof WhileStatement || container instanceof ForStatement
           || container instanceof SwitchStatement)) {
             container = container.eContainer
         }
+
         var breakindex = Math.abs(mapAstNodeToIndex.get(container))
         var varSet = mapWhileToVarSet.get(container)
         storeVarsToMem(varSet, map, false)
-        jumpToLoopEnd(breakindex)
-
+        
+        // jump to loop end
+        var loopEndLabel = genLoopEndLabel(breakindex)
+        insertQasmGoto(loopEndLabel)
         return new MetaData
     }
 
+	/**
+	 * Compile a WhileStatement.
+	 * <p>
+	 * We try to unroll the loop up to {@link Configuration.maxUnrolling} times.
+	 * Beyond that, the loop keeps its original form, i.e., consisting of a branch instruction
+	 * and several labels.
+	 * <p>
+	 * The unrolling is only possible when the condition is constant, i.e., can be evaluated 
+	 * during compilation time.
+	 * 
+	 * @param whileStatement  an AST node of WhileStatement type
+	 * @param map             the symbol table of current operation
+	 * @return                null
+	 */
     def dispatch MetaData compile(WhileStatement whileStatement, HashMap<String, MetaData> map) {
 
-        printNode(NodeModelUtils.getNode(whileStatement))
+		// The ContinueStatement and BreakStatement work differently during loop-unrolling.
+		// BreakStatement works the same as not unrolling, i.e., jumping to the end of the loop.
+		// However, there is no labels for ContinueStatment to jump to. Instead, it only needs
+		// to end the compilation of a BlockStatment early. Here, we assign the index to a
+		// negative number to mark the differences.
         var tempwhileindex = whileIndex++
         mapAstNodeToIndex.put(whileStatement, -tempwhileindex)
 
@@ -430,40 +647,35 @@ class QuingoGenerator extends AbstractGenerator {
         var whileEndLabel = genLoopEndLabel(tempwhileindex)
 
         var metaCondResult = whileStatement.condExpression.compile(map)
-        var count = 0
+        var count = 0  // count how many times the loop have been unrolled
         
         var containBreakOrContinue = whileStatement.whileBody.containBreakOrContinue
-
         while (metaCondResult.valid.constant && !containBreakOrContinue) {
 
             if (metaCondResult.value as Boolean) {  // the while condition is true
 
-                // the following two statements are actually a loop-unrolling process
-                if (whileStatement.whileBody.compile(map) !== null) {        // evaluate the body
+                // unroll the loop by compiling the body
+                if (whileStatement.whileBody.compile(map) !== null) {  // if containing return, break, etc.
 	                genQasmLabel(whileEndLabel)
                 	return null
                 }
                 metaCondResult = whileStatement.condExpression.compile(map) // update the condition
-
-            } else {                                // the while condition is false
-
+            } 
+            else {                                // the while condition is false
+            
                 // upon loop exit, generate the loop end label.
                 genQasmLabel(whileEndLabel)
                 return null
-
             }
 
-            count++  // count how many times the loop have been unrolled
-            if (count >= Configuration.maxUnrolling) {
+            count++
+            if (count >= Configuration.maxUnrolling) { // after maxUnrolling times, use instructions for the loop
                 genQasmComment("Unrolling is up to " + count + " loops")
-                // after maxUnrolling times, use instructions for the loop
                 metaCondResult.valid.setOnlyReg
             }
         }
 
         // get all array variables (ExpVariable) in the while body
-        //var set = collectVariable(whileStatement.whileBody)
-        // TODO: check why is this line abandoned?
         var set = new HashSet<String>
         for (v: whileStatement.eAllContents.toIterable.filter(ExpVariable)) {
             set.add(v.value.name)
@@ -475,22 +687,46 @@ class QuingoGenerator extends AbstractGenerator {
         // store the array to the memory
         storeVarsToMem(set, map, true)
 
+        // Both ContinueStatement and BreakStatement jump to labels, so we change
+        // the index to a positive number.
         mapAstNodeToIndex.put(whileStatement, tempwhileindex)
 
         // -------------- use instructions to implement the while loop ---------------
-        genInsnForWhileHead(whileStatement.condExpression, whileStartLabel, whileEndLabel, map)
 
-        // generate instructions for the while body, and keep related arrays in the memory
-        genInsnForWhileBody(whileStatement.whileBody, set, map)
+        // generate a start label for the while loop
+        genQasmLabel(whileStartLabel)
 
-        genInsnForWhileTail(whileStartLabel, whileEndLabel)
+        // if the result is not true, goto while end label (skip the while body)
+        metaCondResult = whileStatement.condExpression.compile(map)
+        var insn = gotoLabelIfNotEqual(metaCondResult.register, 'r1', whileEndLabel)
+        insn.setTrailingComment("skip the while body if condition not satisfied.")
+        
+        // generate instructions for the while body
+        whileStatement.whileBody.compile(map)
+        storeVarsToMem(set, map, true)
 
+        // unconditionally jump back to the loop start to evaluate the while condition
+        insertQasmGoto(whileStartLabel)
+
+        // add the while end label after the entire while body
+        genQasmLabel(whileEndLabel)
+
+        // remove the variable set since it may occupy space
         if (containBreakOrContinue) {
         	mapWhileToVarSet.remove(whileStatement)
         }
         return null
     }
 
+	/**
+	 * Compile a SwitchStatement.
+	 * 
+	 * @param switchStatement  an AST node of SwitchStatement type
+	 * @param map              the symbol table of current operation
+	 * @return                 null
+	 * 
+	 * @deprecated SwitchStatement will be removed from Quingo
+	 */
     def dispatch MetaData compile(SwitchStatement switchStatement, HashMap<String, MetaData> map) {
 
         if (switchStatement.switchBody === null) {  // no cases inside, skip
@@ -556,10 +792,10 @@ class QuingoGenerator extends AbstractGenerator {
         indexNextActionBlock.set(length, -1)
 
         for (var i = length - 1; i >= 0; i--) {
-
             if (switchBody.get(i).caseActionStats === null) {
                 indexNextActionBlock.set(i, indexNextActionBlock.get(i + 1))
-            } else {
+            } 
+            else {
                 indexNextActionBlock.set(i, i)
             }
         }
@@ -580,42 +816,47 @@ class QuingoGenerator extends AbstractGenerator {
                 var metaCaseValue = labeledBlock.expCaseValue.compile(map)
                 var regCaseValue = metaCaseValue.register
 
-                if (labeledBlock.caseActionStats === null) {    // TODO: check why it can work here.
+                if (labeledBlock.caseActionStats === null) {
 
                     gotoLabelIfEqual(regSwitchValue, regCaseValue, caseStartLabel)
-
-                } else {
-
+                } 
+                else {
                     gotoLabelIfNotEqual(regSwitchValue, regCaseValue, caseEndLabel)
-
                     genQasmLabel(caseStartLabel)
-
                     labeledBlock.caseActionStats.compile(map)
-
                     genQasmLabel(caseEndLabel)
                 }
             }
         }
 
-        switchStatement.defaultBlock?.caseActionStats?.compile(map) // null-safe calling
-
+        switchStatement.defaultBlock?.caseActionStats?.compile(map)
         genQasmLabel(genLoopEndLabel(index))
         return null
     }
 
+	/**
+	 * Compile an IfStatement.
+	 * <p>
+	 * When the condition is constant, the IfStatement is resolved to either the if block or the else block.
+	 * Otherwise, both blocks are compiled and their execution depends on the branch instruction.
+	 * 
+	 * @param stat  an AST node of IfStatement type
+	 * @param map   the symbol table of current operation
+	 * @return      a MetaData if containing ReturnStatment, ContinueStatement, or BreakStatement; otherwise, null
+	 */
     def dispatch MetaData compile(IfStatement stat, HashMap<String, MetaData> map) {
         var condition = stat.expression.compile(map)
-
         if (condition.valid.constant) {  // the if-else can be statically resolved
-
-            if (condition.value as Boolean) { return stat.ifStat.compile(map) }
-            else { return stat.elseStat?.compile(map) }
-
+            if (condition.value as Boolean) { // condition == true
+            	return stat.ifStat.compile(map)
+            }
+            else { // condition == false
+            	return stat.elseStat?.compile(map)
+            }
         }
 
         // using instructions to do if-else.
         var set = collectVariable(stat.ifStat)
-
         storeVarsToMem(set, map, true)
 
         var index = ifIndex++
@@ -623,51 +864,55 @@ class QuingoGenerator extends AbstractGenerator {
         var ifElseLabel = genIfElseLabel(index)
         var ifEndLabel = genIfEndLabel(index)
         if (stat.elseStat === null) {   // only if, no else
-
             gotoLabelIfNotEqual(creg, 'r1', ifEndLabel)
-
             stat.ifStat.compile(map)
             storeVarsToMem(set, map, true)
-
             genQasmLabel(ifEndLabel)
-
-        } else {                        // if with the else branch
-
+        } 
+        else {                        // if with the else branch
             // condition unsatisfied, goto else body
             gotoLabelIfNotEqual(creg, 'r1', ifElseLabel)
 
             stat.ifStat.compile(map)                // if body
             storeVarsToMem(set, map, true)
-            insertQasmGoto(ifEndLabel)              // skip the else body
-
-
+            insertQasmGoto(ifEndLabel)              // go to the end
             genQasmLabel(ifElseLabel)               // else body
+
             var elseSet = collectVariable(stat.elseStat)
-
             storeVarsToMem(elseSet, map, true)
-
+            
             stat.elseStat.compile(map)
-
             storeVarsToMem(elseSet, map, true)
-
             genQasmLabel(ifEndLabel)          // if structure end
         }
         return null
     }
 
+	/**
+	 * Compile an Assignment.
+	 * 
+	 * @param assignment  an AST node of Assignment type
+	 * @param map         the symbol table of current operation
+	 * @return            null
+	 */
     def dispatch MetaData compile(Assignment assignment, HashMap<String, MetaData> map) {
-
         var metaRightSide = assignment.value.compile(map)
 
         var leftExp = assignment.left as Expression
         var metaLeftSide = compileLeftHandSideExpression(leftExp, map)
 
-        // TODO: create wrapper: copy concrete type
         assignMetaData(metaLeftSide, metaRightSide, getQuingoTypeOfExpr(leftExp),
                        NodeModelUtils.getNode(assignment))
         return null
     }
 
+	/**
+	 * Compile an OpAssignment.
+	 * 
+	 * @param assignment  an AST node of OpAssignment type
+	 * @param map         the symbol table of current operation
+	 * @return            null
+	 */
     def dispatch MetaData compile(OpAssignment assignment, HashMap<String, MetaData> map) {
         var metaRightSide = assignment.right.compile(map)
 
@@ -682,33 +927,60 @@ class QuingoGenerator extends AbstractGenerator {
         return null
     }
 
+	/**
+	 * Compile a UsingStatement.
+	 * 
+	 * @param stat  an AST node of UsingStatement type
+	 * @param map   the symbol table of current operation
+	 * @return      a MetaData if containing ReturnStatment; otherwise, null
+	 */
     def dispatch MetaData compile(UsingStatement stat, HashMap<String, MetaData> map) {
         var qnum = 0
-
         for (par: stat.pars) {
-
             var meta = allocateQubit(par.name, par.type, map)
-
-            if (meta.link === null) {
+            if (meta.link === null) { // if the meta is not an array -> it is a single qubit
                 qnum += 1
-            } else {
+            } else {                  // the meta is an array
                 qnum += meta.value as Integer
             }
         }
-        stat.block.compile(map)
+        var res = stat.block.compile(map)
         sIndex -= qnum // deallocate qubits
-        return null
+        return res
     }
 
+	/**
+	 * Compile an EmptyStatement.
+	 * <p>
+	 * Do nothing for the EmptyStatement.
+	 * 
+	 * @param stat  an AST node of EmptyStatement type
+	 * @param map   the symbol table of current operation
+	 * @return      null
+	 */
     def dispatch MetaData compile(EmptyStatement stat, HashMap<String, MetaData> map) {
         return null
     }
 
+	/**
+	 * Compile an TimerDeclaration.
+	 * 
+	 * @param timer  an AST node of TimerDeclaration type
+	 * @param map    the symbol table of current operation
+	 * @return       null
+	 */
     def dispatch MetaData compile(TimerDeclaration timer, HashMap<String, MetaData> map) {
         timerMap.put(timer, global)
         return null
     }
 
+	/**
+	 * Compile an TimingConstraint.
+	 * 
+	 * @param stat  an AST node of TimingConstraint type
+	 * @param map   the symbol table of current operation
+	 * @return      null
+	 */
     def dispatch MetaData compile(TimingConstraint stat, HashMap<String, MetaData> map) {
         var timer = timerMap.get(stat.timer)
         var meta = stat.value.compile(map)
@@ -718,26 +990,53 @@ class QuingoGenerator extends AbstractGenerator {
         return null
     }
 
+	/**
+	 * Compile an ExpFunctionCall.
+	 * 
+	 * @param exp  an AST node of ExpFunctionCall type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(ExpFunctionCall exp, HashMap<String, MetaData> map) {
-        var meta = compileFunctionCall(exp.fun, exp.pars, map, NodeModelUtils.getNode(exp))
-        return meta
+        return compileFunctionCall(exp.fun, exp.pars, map, NodeModelUtils.getNode(exp))
     }
 
+	/**
+	 * Compile an Or expression.
+	 * <p>
+	 * When the operands are both constant, the result is calculated during compilation time.
+	 * Otherwise, an eQASM OR instruction is generated.
+	 * 
+	 * @param exp  an AST node of Or type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(Or exp, HashMap<String, MetaData> map) {
         var metaLeftOperand = exp.left.compile(map)
         var metaRightOperand = exp.right.compile(map)
         if (metaLeftOperand.valid.constant && metaRightOperand.valid.constant) {
             return new MetaData(metaLeftOperand.value as Boolean || metaRightOperand.value as Boolean)
         }
+        
+        // When (a) operands are unknown during compilation
         var regLeftOperand = metaLeftOperand.register
         var regRightOperand = metaRightOperand.register
         var metaResult = allocMetaAndStackForType(QuingoBoolType)
         var regOrResult = metaResult.register
         genInsnOrRegs(regOrResult, regLeftOperand, regRightOperand)
-
         return metaResult
     }
 
+	/**
+	 * Compile an And expression.
+	 * <p>
+	 * When the operands are both constant, the result is calculated during compilation time.
+	 * Otherwise, an eQASM AND instruction is generated.
+	 * 
+	 * @param exp  an AST node of And type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(And exp, HashMap<String, MetaData> map) {
         var metaLeftOperand = exp.left.compile(map)
         var metaRightOperand = exp.right.compile(map)
@@ -745,29 +1044,50 @@ class QuingoGenerator extends AbstractGenerator {
             return new MetaData(metaLeftOperand.value as Boolean && metaRightOperand.value as Boolean)
         }
 
+        // When (a) operands are unknown during compilation
         var regLeftOperand = metaLeftOperand.register
         var regRightOperand = metaRightOperand.register
         var metaResult = allocMetaAndStackForType(QuingoBoolType)
-        var regAndResult = metaResult.register
-        genInsnAndRegs(regAndResult, regLeftOperand, regRightOperand)
-
+        genInsnAndRegs(metaResult.register, regLeftOperand, regRightOperand)
         return metaResult
     }
 
+	/**
+	 * Compile an Add expression.
+	 * 
+	 * @param exp  an AST node of Add type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(Add exp, HashMap<String, MetaData> map) {
         var metaLeftOperand = exp.left.compile(map)
         var metaRightOperand = exp.right.compile(map)
-        var metaResult = compileOperator(metaLeftOperand, metaRightOperand, exp.op)
-        return metaResult
+        return compileOperator(metaLeftOperand, metaRightOperand, exp.op)
     }
 
+	/**
+	 * Compile an Mult expression.
+	 * 
+	 * @param exp  an AST node of Mult type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(Mult exp, HashMap<String, MetaData> map) {
         var metaLeftOperand = exp.left.compile(map)
         var metaRightOperand = exp.right.compile(map)
-        var metaResult = compileOperator(metaLeftOperand, metaRightOperand, exp.op)
-        return metaResult
+        return compileOperator(metaLeftOperand, metaRightOperand, exp.op)
     }
 
+	/**
+	 * Compile an Equal expression.
+	 * <p>
+	 * When the operands are both constant, the result is calculated during compilation time.
+	 * Otherwise, eQASM instructions are generated.
+	 * 
+	 * @param exp  an AST node of Equal type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(Equal exp, HashMap<String, MetaData> map) {
         var metaLeftOperand = exp.left.compile(map)
         var metaRightOperand = exp.right.compile(map)
@@ -775,22 +1095,31 @@ class QuingoGenerator extends AbstractGenerator {
         if (metaLeftOperand.valid.constant && metaRightOperand.valid.constant) {
             if (exp.op == "==") {
                 return new MetaData(metaLeftOperand.value == metaRightOperand.value)
-            } else {
+            } 
+            else { // exp.op == "!="
                 return new MetaData(metaLeftOperand.value != metaRightOperand.value)
             }
         }
 
+        // When (a) operands are unknown during compilation
         var regLeftOperand = metaLeftOperand.register
         var regRightOperand = metaRightOperand.register
         var metaResult = allocMetaAndStackForType(QuingoBoolType)
-        var regResult = metaResult.register
-        genInsnsCheckEquality(regResult, regLeftOperand, regRightOperand, exp.op, metaLeftOperand.type)
-
+        genInsnsCheckEquality(metaResult.register, regLeftOperand, regRightOperand, exp.op, metaLeftOperand.type)
         return metaResult
     }
 
+	/**
+	 * Compile an NEqual expression.
+	 * <p>
+	 * When the operands are both constant, the result is calculated during compilation time.
+	 * Otherwise, eQASM instructions are generated.
+	 * 
+	 * @param exp  an AST node of NEqual type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(NEqual exp, HashMap<String, MetaData> map) {
-
         var metaLeftOperand = exp.left.compile(map)
         var metaRightOperand = exp.right.compile(map)
 
@@ -808,7 +1137,8 @@ class QuingoGenerator extends AbstractGenerator {
                     case ">":
                         new MetaData(floatLeftOperand > floatRightOperand)
                 }
-            } else {
+            } 
+            else { // metaLeftOperand.type instanceof IntType
                 var intLeftOperand = metaLeftOperand.value as Integer
                 var intRightOperand = metaRightOperand.value as Integer
                 return switch (exp.op) {
@@ -824,18 +1154,27 @@ class QuingoGenerator extends AbstractGenerator {
             }
         }
 
+        // When (a) operands are unknown during compilation
         var regLeftOperand = metaLeftOperand.register
         var regRightOperand = metaRightOperand.register
         var type = metaLeftOperand.type
         var metaResult = allocMetaAndStackForType(QuingoBoolType)
         var regResult = metaResult.register
         genInsnsPOCmp(regResult, regLeftOperand, regRightOperand, exp.op, type)
-
         return metaResult
     }
 
+	/**
+	 * Compile a Unary expression.
+	 * <p>
+	 * When the operand is constant, the result is calculated during compilation time.
+	 * Otherwise, eQASM instructions are generated.
+	 * 
+	 * @param exp  an AST node of Unary type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(Unary exp, HashMap<String, MetaData> map) {
-
         var metaResult = exp.final.compile(map)
         if (exp.op == "+") {
             return metaResult
@@ -857,77 +1196,102 @@ class QuingoGenerator extends AbstractGenerator {
             }
         }
 
+        // When the operand is unknown during compilation
         metaResult.register
-
-        var metaResult2 = allocMetaAndStackForType(metaResult.type)     // can we use the old metaResult?
-        var regTarget = metaResult2.register
-        genInsnForUnary(regTarget, metaResult.reg, exp.op, metaResult.type)
+        var metaResult2 = allocMetaAndStackForType(metaResult.type)
+        genInsnForUnary(metaResult2.register, metaResult.reg, exp.op, metaResult.type)
         return metaResult2
     }
 
-    /**
-     * {ExpVariable} value=[Variable]
-     *
-     * Get the meta data of this variable expression.
-     */
+	/**
+	 * Compile an ExpVariable expression.
+	 * <p>
+	 * Note that a variable can represent a function. In that case, the function's URI is stored
+	 * in the MetaData
+	 * <p>
+	 * Variables of QubitType are not allowed to place on the left side in an assignment, i.e.,
+	 * qubits are unclonable.
+	 * 
+	 * @param exp  an AST node of ExpVariable type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(ExpVariable exp, HashMap<String, MetaData> map) {
-
         var MetaData meta
         var value = (exp as ExpVariable).value
         if (value instanceof FunDeclaration) {
             meta = new MetaData(EcoreUtil.getURI(exp.value).toString)
-
-        } else {
-
+        } 
+        else { // normal variables
             meta = map.get(exp.value.name)
-
             if (!bExprOnLeftSide && !meta.valid.atLeastOne && !(meta.type instanceof QubitType)) {
                 throw new IOException("The value of variable " + value.name + " in line "
                     + NodeModelUtils.getNode(exp).getStartLine + " of "
                     + exp.eResource.URI.lastSegment + " is undefined!")
             }
         }
-
         return meta
     }
 
+	/**
+	 * Compile an BooleanLiteral expression.
+	 * 
+	 * @param exp  an AST node of BooleanLiteral type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(BooleanLiteral exp, HashMap<String, MetaData> map) {
-        var meta = new MetaData(exp.isTrue)
-        return meta
+        return new MetaData(exp.isTrue)
     }
 
+	/**
+	 * Compile an IntLiteral expression.
+	 * 
+	 * @param exp  an AST node of IntLiteral type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(IntLiteral exp, HashMap<String, MetaData> map) {
-        var meta = new MetaData(exp.value)
-        return meta
+        return new MetaData(exp.value)
     }
 
+	/**
+	 * Compile an DoubleLiteral expression.
+	 * 
+	 * @param exp  an AST node of DoubleLiteral type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(DoubleLiteral exp, HashMap<String, MetaData> map) {
-        var meta = new MetaData(exp.value)
-        return meta
+        return new MetaData(exp.value)
     }
 
-    /**
-     *  ArrayAccess returns Expression:
-     *          {ExpVariable} value=[Variable] ({ArrayAccess.array=current}
-     *            "[" dim=Expression "]")* ({ExpLength.left=current} ".length")?;
-     *
-     */
-    // TODO: this encapsulation has not been finished.
+	/**
+	 * Compile an ArrayAccess expression.
+	 * <p>
+	 * This function is implemented considering mainly three cases:
+	 * <p>
+	 * 1. If the the array and the index are both known at compilation time, the corresponding MetaData
+	 * is returned immediately. Otherwise, for the other two cases, eQASM instructions are generated.
+	 * <p>
+	 * 2. In most situation, except for case 3, the function returns the indexed element in the array
+	 * (encapsulate in a MetaData). This element can be a primitive value or an address that represents
+	 * another array.
+	 * <p>
+	 * 3. If the array consists of primitive values, but it is on the left side of an assignment statement,
+	 * the function should not return the indexed value, but the indexed address. We created a PointerType
+	 * MetaData for expressing that address
+	 * 
+	 * @param exp  an AST node of ArrayAccess type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(ArrayAccess exp, HashMap<String, MetaData> map) {
-        // get the base address
-//        var expArray = exp.array as ExpVariable
-//        var name = expArray.value.name
-//        if (name.equals('res')) {
-//            println('got res!')
-//        }
-
         var metaArray = exp.array.compile(map)
         var metaIndex = exp.dim.compile(map)
 
         if (metaArray.valid.constant) {
-
             if (metaIndex.valid.constant) {
-
                 var intIndex = convToInt(metaIndex.value)
                 // note, the `value` field in the MetaData for an array indicates the length of this array
                 var iArrayLength = convToInt(metaArray.value)
@@ -937,35 +1301,29 @@ class QuingoGenerator extends AbstractGenerator {
                         + " accesses index " + intIndex + " in an array of size " + iArrayLength
                     )
                 }
-
                 return metaArray.link.get(intIndex)     // fetch the element at given index
-
-            } else {
-
+            } 
+            else { // metaIndex.valid.constant == false
                 metaArray.storeToMem                    // put this array to memory
             }
         }
 
         var typeArrayElement = getArrayElementType(getQuingoTypeOfExpr(exp.array))
-        // var typeArrayElement = (xsemantics.exptype(exp.array).value as ArrayType).ptype
 
         /**
          * `exp` appears as a left-value and the element type is not an array type
          *  On the left side means we are going to assign a value to it.
          *  We can only assign values to primitive types, which should not be an array.
-         * TODO: check, what if we are going to assign a subarray?
          */
         var bPrimitiveValueForAssignment  = bExprOnLeftSide && !(typeArrayElement instanceof ArrayType)
-        val iArrElementSize               = dataSize(typeArrayElement)
-
-
-        // calculate shift
+ 
+        val iArrElementSize   = dataSize(typeArrayElement)
         var String regElement = allocRegister
-
         var iOffsetCurEleToBodyBaseAddr = 0
         var metaElement                 = new MetaData(regElement)
         metaElement.valid.setOnlyReg
 
+        // calculate shift
         var regArrBodyAddr = metaArray.register
         if (metaIndex.valid.constant) {       // the newest value of the dimension size is in the meta data
             iOffsetCurEleToBodyBaseAddr = iArrElementSize * convToInt(metaIndex.value) + Serializer.INT_SIZE
@@ -973,16 +1331,15 @@ class QuingoGenerator extends AbstractGenerator {
                 metaElement.reg   = regArrBodyAddr
                 metaElement.value = iOffsetCurEleToBodyBaseAddr
                 metaElement.type  = new PointerType
-            } else {
+            } 
+            else { // not on the left side or a array of arrays 
                 loadMemToReg(typeArrayElement, regElement, iOffsetCurEleToBodyBaseAddr, regArrBodyAddr) // actual fetch
                 metaElement.type = copyQuingoType(typeArrayElement)
             }
-
-        } else {                        // the newest value of the dimension size is not in the meta data
-
+        } 
+        else {    // the newest value of the dimension size is not in the meta data
             loadImmToReg(strToGPR(regElement), iArrElementSize)  // regElement = size
             var regIndex = metaIndex.register
-
             genInsnMulRegs(regElement, regElement, regIndex)     // regElement *= dim
 
             // regElement += 4 (considering the element that stores the length)
@@ -993,46 +1350,50 @@ class QuingoGenerator extends AbstractGenerator {
                 metaElement.reg = regElement
                 metaElement.value = 0
                 metaElement.type = new PointerType
-            } else {
+            } 
+            else { // not on the left side or a array of arrays 
                 loadMemToReg(typeArrayElement, regElement, 0, regElement)  // final fetch
-
                 metaElement.type = copyQuingoType(typeArrayElement)
             }
         }
-
         return metaElement
     }
 
-    /**
-     * Compile the structure `{ExpLength.left=current} ".length"`, i.e., retrieve the length of the array or tuple
-     *  in `left`. Write the result in the returned metaLength, and generate required instructions to move data.
-     */
+	/**
+	 * Compile an ExpLength expression.
+	 * <p>
+	 * The function retrieves the length of the array, writes the result in the returned metaLength, 
+	 * and generates required instructions to move data.
+	 * 
+	 * @param exp  an AST node of ExpLength type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(ExpLength exp, HashMap<String, MetaData> map) {
-
         var metaArray = exp.left.compile(map)
-        var metaLength = new MetaData
-
         if (metaArray.valid.constant) {
-            metaLength = new MetaData(metaArray.value as Integer)
+            return new MetaData(metaArray.value as Integer)
+        } 
 
-        } else {
-            var regLength = metaLength.register
-
-            loadMemToReg(regLength, 0, metaArray.reg) // load the length of metaArray to `regLength`
-//            loadLengthOfArrayToReg(metaArray, regLength)
-
-            metaLength.valid.setOnlyReg
-        }
-
+        // metaArray.valid.constant == false
+        var metaLength = new MetaData
+        loadMemToReg(metaLength.register, 0, metaArray.reg) // load the length of metaArray to `regLength`
+        metaLength.valid.setOnlyReg
         return metaLength
     }
 
-    /**
-     * Compile the ExpTuple, whihc is a tuple whose elements directly written in parentheses: (exp0, exp1, ...).
-     * Write the resultant tuple in metaTupleResult, and generate required instructions to move data.
-     */
+	/**
+	 * Compile an ExpTuple expression.
+	 * <p>
+	 * The function compiles the ExpTuple, i.e., a tuple whose elements directly written in parentheses:
+	 * (exp0, exp1, ...). The function writes the resultant tuple in metaTupleResult, and generates 
+	 * required instructions to move data.
+	 * 
+	 * @param exp  an AST node of ExpTuple type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(ExpTuple exp, HashMap<String, MetaData> map) {
-
         var iNumOfElementsInTuple = exp.texp.length
         if (iNumOfElementsInTuple === 1) {
             return exp.texp.get(0).compile(map)
@@ -1048,18 +1409,24 @@ class QuingoGenerator extends AbstractGenerator {
         for (var i = 0; i < iNumOfElementsInTuple; i++) {
             metaTupleResult.link.add(exp.texp.get(i).compile(map))
         }
-
         return metaTupleResult
     }
 
-    /**
-     * Compile the ExpArray: `{expr0, expr1, ...}`
-     *  This is an array whose elements are directly written in braces.
-     */
+	/**
+	 * Compile an ExpArray expression.
+	 * <p>
+	 * As the length of the array is known during compilation (which is {@code exp.exp.length}),
+	 * the resultant MetaData's {@code valid} is always constant. However, we still allocate
+	 * memory in the QCP for the array, in case it will be stored to memory.
+	 * 
+	 * @param exp  an AST node of ExpArray type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(ExpArray exp, HashMap<String, MetaData> map) {
-
+    	
+    	// create the type of the array
         val typeArrayElement = getQuingoTypeOfExpr(exp.exp.get(0))
-
         var typeArray = QuingoFactory.eINSTANCE.createArrayType => [
             it.ptype = typeArrayElement
         ]
@@ -1082,7 +1449,6 @@ class QuingoGenerator extends AbstractGenerator {
 
         // evaluate each each expression in `{expr0, expr1, ...}` and append it to the element list of metaArrayResult
         for (exprArrayElement : exp.exp) {
-
             var metaElement = allocMetaAndStackForType(typeArrayElement)
             createMetaData(metaElement, typeArrayElement, null)
 
@@ -1090,20 +1456,24 @@ class QuingoGenerator extends AbstractGenerator {
             iAddrForNextElement += iElementSize
             assignMetaData(metaElement, exprArrayElement.compile(map), typeArrayElement,
                            NodeModelUtils.getNode(exprArrayElement))
-
             metaArrayResult.link.add(metaElement)        // append the element
         }
-
         return metaArrayResult
     }
 
-    /**
-     * Compile `ToInt(expr)`
-     */
+	/**
+	 * Compile an ToInt expression.
+	 * <p>
+	 * When the operand is constant, the result is calculated during compilation time.
+	 * Otherwise, an eQASM instruction is generated.
+	 * 
+	 * @param exp  an AST node of ToInt type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(ToInt exp, HashMap<String, MetaData> map) {
-
         var metaExprResult = exp.value.compile(map)
-        if (metaExprResult.type instanceof IntType) {    // what does this line mean?
+        if (metaExprResult.type instanceof IntType) { // if the operand is already an int, we do not need to convert
             return metaExprResult
         }
 
@@ -1111,109 +1481,102 @@ class QuingoGenerator extends AbstractGenerator {
             return new MetaData((metaExprResult.value as Float).intValue)
         }
 
+		// metaExprResult.valid.constant == false
         var metaResultInt = allocMetaAndStackForType(QuingoIntType)
         var regFloatValue = metaExprResult.register
         var regResultInt = metaResultInt.register
         genInsnConvFloatToInt(regResultInt, regFloatValue)
-
         return metaResultInt
     }
 
-    /**
-     * Compile `ToDboule(expr)`
-     */
+	/**
+	 * Compile an ToDouble expression.
+	 * <p>
+	 * When the operand is constant, the result is calculated during compilation time.
+	 * Otherwise, an eQASM instruction is generated.
+	 * 
+	 * @param exp  an AST node of ToDouble type
+	 * @param map  the symbol table of current operation
+	 * @return     the MetaData that contains the compilation result
+	 */
     def dispatch MetaData compile(ToDouble exp, HashMap<String, MetaData> map) {
-
         var metaExprResult = exp.value.compile(map)
-        if (metaExprResult.type instanceof DoubleType) {    // what does this line mean?
+        if (metaExprResult.type instanceof DoubleType) { // if the operand is already a double, we do not need to convert
             return metaExprResult
         }
 
         if (metaExprResult.valid.constant) {
             return new MetaData((metaExprResult.value as Integer).floatValue)
         }
+        
+		// metaExprResult.valid.constant == false
         var metaResultFloat = allocMetaAndStackForType(QuingoDoubleType)
         var regResultInt = metaExprResult.register
-        var reg = metaResultFloat.register
-
-        genInsnConvIntToFloat(reg, regResultInt)
-
+        genInsnConvIntToFloat(metaResultFloat.register, regResultInt)
         return metaResultFloat
     }
 
-    /** This function seems to get all variables appearing in the statement.
-     *
-     * After doing some experiment, I found that if a variable appears on the left-hand side of an
-     * assignment, the name of this variable will be collected.
-     *
-     * However, there is currently an exception, variables **defined** on the left-hand side will not
-     * be collected.
-     *
-     * Next TODO: check when this function is used and what the purpose of this function is.
-     * Currently, this function is only called for if and for statements.
-     */
+	/**
+	 * Collects the variables whose values are modified in a (block) statement.
+	 * <p>
+	 * This is an useful analysis need for branch structures. The returned variables
+	 * need to be stored in memory before and after the branch.
+	 * 
+	 * @param stat  a statement, typically a BlockStatement
+	 * @return      the name of the variables contained in the statement
+	 */
     def collectVariable(Statement stat) {
-        // println("statement to collect variable: " + NodeModelUtils.getNode(stat).getText)
-
         var ret = new HashSet<String>
         for (assignStatement : stat.eAllContents.toIterable.filter(Assignment)) {
-
-            printNode(NodeModelUtils.getNode(assignStatement))
-
             var exprLeftSide = assignStatement.left
-
             if (exprLeftSide instanceof ExpVariable) {
                 ret.add(exprLeftSide.value.name)        // add the array name
-
-            } else {
-
+            } 
+            else {
                 for (v : exprLeftSide.eAllContents.toIterable.filter(ExpVariable)) {
-                    ret.add(v.value.name)               // what's this for?
+                    ret.add(v.value.name)          // add variables inside a tuple
                 }
             }
         }
 
         for (assignStatement : stat.eAllContents.toIterable.filter(OpAssignment)) {
-
-            printNode(NodeModelUtils.getNode(assignStatement))
-
             var exprLeftSide = assignStatement.left
             if (exprLeftSide instanceof ExpVariable) {
                 ret.add(exprLeftSide.value.name)
-
-            } else {
-
+            } 
+            else {
                 for (v : exprLeftSide.eAllContents.toIterable.filter(ExpVariable)) {
                     ret.add(v.value.name)
                 }
             }
         }
-        // println("variables collected: " + String.join(', ', ret))
         return ret
     }
 
-    /** Process a function call
-     *
-     * Params:
-     *  - `v`   : an AST node corresponding to a function call.
-     *  - `pars`: the actual parameters passed to this function.
-     *  - `map` : the symbol table (a map from variable name to the meta data) seen at this moment
-     *  - `node`: the concrete AST node to process, which is used to emit error message.
+    /**
+     * Implement a function (operation) call.
+     * <p>
+     * Operations are of two types: used-defined operation (fun.o == true) and opaque operation (fun.p == true).
+     * <p>
+     * The returned value (MetaData) is stored in the operation's symbol table using "return" as the key.
+     * 
+     * @param nodeVariable  an AST node corresponding to a function call
+     * @param pars          the actual parameters passed to this function
+     * @param map           the symbol table of the parent operation
+     * @param node          the concrete AST node to process, which is used to emit error message
+     * @return              null if the function type is UnitType; otherwise, return the return value of the function
      */
     def MetaData compileFunctionCall(Variable nodeVariable, EList<Expression> pars,
                                      HashMap<String, MetaData> map, ICompositeNode node) {
         var FunDeclaration fun
         if (nodeVariable instanceof FunDeclaration) { // Normal function call
-
             fun = nodeVariable
-
-        } else {                           // Higher order function call
-
+        } 
+        else {                           // Higher order function call
             var uri = URI.createURI(map.get(nodeVariable.name).reg)
             fun = nodeVariable.eResource.resourceSet.getEObject(uri, false) as FunDeclaration
         }
         genQasmComment('start of ' + fun.name)
-        // println("function call: " + fun.name + ", line " + node.startLine +  ", content " +  _node.getText.strip)
 
         if (fun.o) {                // an operation
             /** for operations, perform actual function call, which consists of:
@@ -1258,36 +1621,29 @@ class QuingoGenerator extends AbstractGenerator {
         else if (fun.p) {           // an opaque operation
             // for opaque operation, generate the corresponding eQASM instructions.
 
-            var opaque_type = fetchConfig(fun, fun.name, "type")
-
+            var opaque_type = fetchConfig(fun.name, "type")
             if (opaque_type.equals("init")) {
-
-                genInsnWaitBasedInit(fun)
-
-            } else if (opaque_type.equals("meas")) {
-
-                var MsmtEqasmName = fetchConfig(fun, fun.name, "eqasm") as String
+		        val OpDuration = fetchConfig(fun.name, "duration") as Integer
+		        genInsnWait(OpDuration)
+            } 
+            else if (opaque_type.equals("meas")) { // measure
+                var MsmtEqasmName = fetchConfig(fun.name, "eqasm") as String
                 var regQotrs      = pars.get(0).compile(map).reg
-                var iMsmtDuration = fetchConfig(fun, fun.name, "duration") as Integer
+                var iMsmtDuration = fetchConfig(fun.name, "duration") as Integer
                 var meta = genInsnForMsmt(MsmtEqasmName, regQotrs, iMsmtDuration)
-
                 genQasmComment('end of ' + fun.name)
                 return meta
-
-            } else if (opaque_type.equals("single-qubit")) {
-
-                // TODO: QWAIT should be inserted if duration > 7
+            } 
+            else if (opaque_type.equals("single-qubit")) { // single qubit operations such as H
                 val PreInterval = duration
-                val opName = fetchConfig(fun, fun.name, "eqasm") as String
+                val opName = fetchConfig(fun.name, "eqasm") as String
                 val regQotrs = pars.get(0).compile(map).reg
                 genInsnSQOperation(PreInterval, opName, regQotrs)
-
-                duration = fetchConfig(fun, fun.name, "duration") as Integer
-
-            } else if (opaque_type.equals("single-qubit-param")) {
-
+                duration = fetchConfig(fun.name, "duration") as Integer
+            } 
+            else if (opaque_type.equals("single-qubit-param")) { // single qubit operations with an additional
+                                                                 // double parameter, such as X(q, 180)
                 var PreInterval = duration
-
                 var pmeta = pars.get(1).compile(map)
                 if (!pmeta.valid.constant) {
                     throw new IOException("[_compileFunctionCall] only constant double numbers are supported now!"
@@ -1295,36 +1651,29 @@ class QuingoGenerator extends AbstractGenerator {
                     )
                 }
 
-                var opName = fetchConfig(fun, fun.name, "eqasm") as String
+                var opName = fetchConfig(fun.name, "eqasm") as String
                 var param = pmeta.value as Float
                 var finalOpName = genOpNameWithParam(opName, param)
-
                 val regQotrs = pars.get(0).compile(map).reg
-
                 genInsnSQOperation(PreInterval, finalOpName, regQotrs)
-
-                duration = fetchConfig(fun, fun.name, "duration") as Integer
-
-            } else if (opaque_type.equals("two-qubit")) {
+                duration = fetchConfig(fun.name, "duration") as Integer
+            } 
+            else if (opaque_type.equals("two-qubit")) { // two-qubit operations, such as CZ(q1, q2)
                 var q0 = pars.get(0).compile(map).reg.substring(1)
                 var q1 = pars.get(1).compile(map).reg.substring(1)
 
-
                 val PreInterval = duration
-                val opName = fetchConfig(fun, fun.name, "eqasm") as String
+                val opName = fetchConfig(fun.name, "eqasm") as String
                 val qubit_pair = new QubitPair(intFromString(q0), intFromString(q1))
-
                 genInsnTQOperation(PreInterval, opName, qubit_pair)
-
-                duration = fetchConfig(fun, fun.name, "duration") as Integer
-
-            } else {
+                duration = fetchConfig(fun.name, "duration") as Integer
+            } 
+            else {
 	            throw new UnsupportedOperationException("Error, unrecognized opaque type: " + opaque_type)
             }
-
-            global += fetchConfig(fun, fun.name, "duration") as Integer
-
-        } else {
+            global += fetchConfig(fun.name, "duration") as Integer
+        } 
+        else {
             throw new UnsupportedOperationException("Error, the function type of " + fun.name + "is neither 'operation' nor 'opaque'.")
         }
         genQasmComment('end of ' + fun.name)
@@ -1332,7 +1681,11 @@ class QuingoGenerator extends AbstractGenerator {
     }
 
     /**
-     * Set the left label to true while compiling the expression.
+     * Compile the left side of an assignment statement.
+     * 
+     * @param leftExp  the Expression on the left side of an assignment statement
+     * @param map      the symbol table of the parent operation
+     * @return         the compiled MetaData
      */
     def compileLeftHandSideExpression(Expression leftExp, HashMap<String, MetaData> map) {
         bExprOnLeftSide = true
@@ -1342,14 +1695,18 @@ class QuingoGenerator extends AbstractGenerator {
     }
 
     /**
-     * Compile binary operators, add, sub, mul, div, rem
-     * Params:
-     *  - `lmeta`: The meta data of the left operand
-     *  - `rmeta`: The meta data of the right operand
-     *  - `op`: a string representation of the operator.
+     * Compile binary operators, i.e., add, sub, mul, div, rem
+	 * <p>
+	 * When the operands are both constant, the result is calculated during compilation time.
+	 * Otherwise, an eQASM instruction is generated.
+     * 
+     * @param lmeta  the compiled left operand
+     * @param rmeta  the compiled right operand
+     * @param op     the operator
+     * @return       the compilation result
      */
     def MetaData compileOperator(MetaData lmeta, MetaData rmeta, String op) {
-        if (lmeta.valid.constant && rmeta.valid.constant) { // constant propogation
+        if (lmeta.valid.constant && rmeta.valid.constant) { // constant propagation
             if (lmeta.type instanceof IntType) {            // integer operations
                 var lvalue = lmeta.value as Integer
                 var rvalue = rmeta.value as Integer
@@ -1372,64 +1729,59 @@ class QuingoGenerator extends AbstractGenerator {
                 }
             }
         }
+
+		// either operand is not constant
         var lreg = lmeta.register
         var rreg = rmeta.register
         var meta = allocMetaAndStackForType(lmeta.type)
         var reg = meta.register
-
         if (lmeta.type instanceof DoubleType) {
             Assertions.assertTrue(rmeta.type instanceof DoubleType)
             genInsnForFpArith(reg, lreg, op, rreg)
-
-        } else {
+        } 
+        else { // lmeta.type instanceof IntType
             genInsnForArith(reg, lreg, op, rreg)
         }
-
         return meta
     }
 
     // ----------------------------------------------------------------------------------
     // start of resource management
     // ----------------------------------------------------------------------------------
+
     /**
-     * Allocate a qubit or a list of qubits.
-     * Params:
-     *  - `name`: the name of the qubit/qubits
-     *  - `type`: which should be `qubit` or `qubit[]` (TODO: higher dimension qubits)
-     *  - `map`: from variable name to the meta data
+     * Allocate a qubit or an array of qubits.
+     * 
+     * @param name  variable name
+     * @param type  variable's type. Only `qubit` or `qubit[]` are allowed
+     * @param map   the symbol table of current operation
+     * @return      the MetaData representing the allocated qubit(s)
      */
     def MetaData allocateQubit(String name, Type type, HashMap<String, MetaData> map) {
-
         var meta = new MetaData
-
         if (type instanceof QubitType) {
             meta.reg = "s" + sIndex
             var Integer[] qArray = #{sIndex++}
             genInsnSetQotrs(meta.reg, qArray)
-
-        } else {
-
+        } 
+        else { // type is qubit[]
             var atype = type as ArrayType
-
             if (atype.length === null) {
-
                 meta.value = 0
-
-            } else {
-
+            } 
+            else { //atype.length !== null
                 var metaLength = atype.length.compile(map)
-
                 if (!metaLength.valid.constant) {
                     writeInsnToFile
                     throw new IOException("[allocateQubit] The length of qubit array must be constant!\n")
                 }
-
                 meta.value = metaLength.value
             }
 
             meta.valid.constant = true
             meta.link = new ArrayList<MetaData>
 
+            // allocate each qubit
             for (var i = 0; i < meta.value as Integer; i++) {
                 var child = new MetaData
                 child.reg = "s" + sIndex
@@ -1437,21 +1789,20 @@ class QuingoGenerator extends AbstractGenerator {
                 genInsnSetQotrs(child.reg, qArray)
                 meta.link.add(child)
             }
-
         }
 
         meta.type = QuingoQubitType
-
         map.put(name, meta)
         return meta
     }
 
     /**
-     *  Get a free GPR which is not bound to any meta data.
-     *
-     * NOTE: there is a risk that this function falls into the dead loop. As Jintao noted, the
-     * registers have been all cleared. So, the dead loop should not appear unless there is a
+     * Get a free GPR which is not bound to any meta data.
+     * <p>
+     * NOTE: there is a risk that this function falls into the dead loop during operations regarding a
      * very-high-dimension array.
+     * 
+     * @return  the name of the allocated register
      */
     def String getFreeGpr() {
         var reg = getNewPollingGprIndx()
@@ -1461,49 +1812,47 @@ class QuingoGenerator extends AbstractGenerator {
         return reg
     }
 
-    /* Get a new general purpose register. */
+    /**
+     * Get a new general purpose register.
+     * 
+     * @return  the name of the allocated register
+     */
     def String allocRegister() {
         allocRegister(QuingoIntType)
     }
 
     /**
-     * Allocate a register to store a variable of the `type`.
+     * Allocate a register to store a variable of the specified type.
+     * <p>
      * If this register has been used by another variable, the value of the old variable
-     *   is stored to the memory at first.
+     * is stored to memory first.
+     * 
+     * @param type  the type of value that will be stored in the register
+     * @return      the name of the allocated register
      */
     def String allocRegister(Type type) {
-
         var String reg = ''
         if (type instanceof DoubleType) {
             reg = getNewPollingFprIdx()
-        } else {
+        } 
+        else { // type instanceof IntType
             reg = getNewPollingGprIndx()
         }
-        // var String reg = getNewPollingRegIdx(type)
 
         var meta = mapRegToMetadata.get(reg)  // get the possibly bound meta data
-
         if (meta !== null) {            // if the register is already bound to a meta data
             decoupleRegFromMeta(meta)
-            // var valid = meta.valid
-            // if (valid.onlyReg) {        //store reg to memory
-            //     ensureHasStackMemory(meta)
-            //     // write the old variable to the memory
-            //     storeRegToMem(meta.type, meta.reg, meta.address)
-            //     valid.setOnlyMem
-            // }
-            // meta.reg = ""
-            // valid.reg = false
         }
-
         return reg
     }
 
     /**
-     * Vacate the register assocated with this metadata, so the reigster can be used for other purposes.
+     * Vacate the register associated with the given metadata, so the register can be used for other purposes.
+     * 
+     * @param metadata  the MetaData containing the register
+     * @return          null
      */
     def decoupleRegFromMeta(MetaData metadata) {
-        // TODO: check, if mapRegToMetadata should reset the corresponding entry?
         var valid = metadata.valid
         if (valid.onlyReg) {        //store reg to memory
             ensureHasStackMemory(metadata)
@@ -1515,8 +1864,11 @@ class QuingoGenerator extends AbstractGenerator {
     }
 
     /**
-     * Allocate a register. Since all variables are stored in the memory, except the dedicated
-     * registers (f0, r0, r1, r2), the next register to retrive is adding one in the register index.
+     * Allocate an F register.
+     * <p>
+     * f0 is used for a special purpose (representing 0) and cannot be allocated.
+     * 
+     * @return  the name of the allocated register
      */
     def String getNewPollingFprIdx() {
         if (fIndex > 31) {
@@ -1524,48 +1876,47 @@ class QuingoGenerator extends AbstractGenerator {
         }
         return "f" + fIndex++
     }
+
+    /**
+     * Allocate an general purpose register. 
+     * <p>
+     * r0, r1, and r2 are used for special purposes and cannot be allocated.
+     * 
+     * @return  the name of the allocated register
+     */
     def String getNewPollingGprIndx() {
         if (iIndex > 31) {
             iIndex = 3
         }
         return "r" + iIndex++
     }
-    // def String getNewPollingRegIdx(Type type) {
-    //     if (type instanceof DoubleType) {
-    //         if (fIndex > 31) {
-    //             fIndex = 1
-    //         }
-    //         return "f" + fIndex++
 
-    //     } else {
-    //         if (iIndex > 31) {
-    //             iIndex = 3
-    //         }
-    //         return "r" + iIndex++
-    //     }
-    // }
-
+    /**
+     * Allocate memory for a MetaData if it has not been allocated.
+     * 
+     * @param meta  The to be examined MetaData
+     * @return      null
+     */
     def ensureHasStackMemory(MetaData meta) {
-        // if this meta data has not a corresponding space in the memory, allocate the required memory.
         if (meta.address === 0) {
             meta.address = allocStackMemory(meta.type)
         }
     }
 
-    /** Allocate a register for a variable with give name and type.
-     *
-     * Args:
-     *  - strVarName: the name of this variable
-     *  - typeVar   : the type of this variable
-     *  - map       : the context while performing register allocation for this variable
-     *
-     * Allocating a register including the following steps:
-     *  - create a metaData with required stack space for this variable (allocMetaAndStackForType)
-     *  - allocate required heap space for this variable (createMetaData)
+    /** 
+     * Allocate a register for a variable with give name and type.
+     * <p>
+     * It consists of the following steps: 1. create a metaData with required stack space for 
+     * this variable (allocMetaAndStackForType); 2. allocate required heap space for this 
+     * variable (createMetaData)
+     * 
+     * @param strVarName the name of this variable
+     * @param typeVar    the type of this variable
+     * @param map        the symbol table while performing register allocation for this variable
+     * @return           allocated MetaData
      */
     def MetaData allocRegForVariable(String strVarName, Type typeVariable,
                                      HashMap<String, MetaData> map) {
-
         var metaVariable = allocMetaAndStackForType(typeVariable)
         createMetaData(metaVariable, typeVariable, map)
 
@@ -1577,13 +1928,13 @@ class QuingoGenerator extends AbstractGenerator {
     }
 
     /**
-     * Create a metaData with an associated stack space for the `type`.
-     *
-     * NOTE: the metaData created is superficial, which means the link field is still empty. In other words,
-     *   no other meta data has been created for elements of the type if this type is an array or tuple.
-     *
-     * TODO: it seems that every call to `allocMetaAndStackForType` is followed by `createMetadata`.
-     *       Maybe we can merge these two functions.
+     * Create a MetaData with an associated stack space for a type.
+     * <p>
+     * NOTE: the metaData created is superficial, i.e., the link field is still empty. In other words,
+     * no other meta data has been created for elements of the type if this type is an array or tuple.
+     * 
+     * @param type  the specified type
+     * @return      created MetaData
      */
     def MetaData allocMetaAndStackForType(Type type) {
         var metaCreated = new MetaData
@@ -1593,41 +1944,35 @@ class QuingoGenerator extends AbstractGenerator {
     }
 
     /**
-     * Allocate memory for array members.
-     * Note, this function is designed to work only for array for now.
+     * Allocate heap space for array members.
      *
-     * Parameters:
-     *   - `metaArray`: the array metaData, which is operated by this function.
-     *   - `type`: the actual type to allocate memory for.
-     *   - `map`: the map from variable to metaData.
-     * TODO: check if we could understand this function as allocating heap space?
+     * @param metaArray  the array metaData, which is operated by this function
+     * @param type       the actual type to allocate memory for
+     * @param map        the symbol table of current operation
      */
     def void createMetaData(MetaData metaArray, Type _type, HashMap<String, MetaData> map) {
-
-        if (!(_type instanceof ArrayType)) { return }  // currently only works for array.
+        if (!(_type instanceof ArrayType)) { return }  // only ArrayType needs heap allocation
 
         var type = _type as ArrayType
-        // Get the actual length and ptype
         var exprArrLength  = type.length
         var typeArrElement = type.ptype
-        var const = true
+        var const = true  // whether the memory can be allocated during compilation time
 
-        // it seems this while loop tries to check one property of the array is constant or not
-        // question: which property does the variable `const` refer to?
+		/* 
+		 * Reconstruct multi-dimensional array type's length. E.g., int[2][3] means the inner array
+		 * is of size 2 and the outer array is of size 3. However, its AST structure is not convenient
+		 * to use for recursion. Here, we change it to ArrayType(ArrayType(int, 3), 2).
+		 */ 
         while (typeArrElement instanceof ArrayType) {    // recursively handle multi-dimension array
-
             var iSubArrLength = typeArrElement.length
-
             if (iSubArrLength !== null) {
-
                 // try to retrieve the length of the subarray
                 var metaSubArrLength = iSubArrLength.compile(map)
 
-                // if the length of the subarray is known
-                if (metaSubArrLength.valid.constant &&
-                // and the length is larger than maxUnrolling
-                     convToInt(metaSubArrLength.value) >= Configuration.maxUnrolling) {
-                // the set this label, which probably means to use instruction to initialize the corresponding memory.
+                // if the length of the subarray is known, but it is too large, we still refuse to
+                // allocate the heap space during compilation
+                if (metaSubArrLength.valid.constant && 
+                	convToInt(metaSubArrLength.value) >= Configuration.maxUnrolling) {
                     const = false
                 }
             }
@@ -1657,13 +2002,13 @@ class QuingoGenerator extends AbstractGenerator {
             // Decide the length of the array
             var metaArrLength = exprArrLength.compile(map)
 
-            if (metaArrLength.valid.constant) { // if the length is a static value, retrieve it.
+            // if the length is a static value, retrieve it.
+            if (metaArrLength.valid.constant) {
                 iArrLength = convToInt(metaArrLength.value)
             }
 
             if (iArrLength >= Configuration.maxUnrolling ||
                   (metaArray.value instanceof Integer && (metaArray.value as Integer) < 0)) {
-
                 const = false
                 metaArray.valid.setOnlyReg
 
@@ -1692,28 +2037,24 @@ class QuingoGenerator extends AbstractGenerator {
                     var strArrStartLabel = genArrStartLabel(iArrLabelIndex)
                     var strArrEndLabel   = genArrEndLabel(iArrLabelIndex)
 
-                    /**
-                     * The following loop performs this task:
-                     ```
+                     /* The following loop performs this task:
                      i = 0;
                      while(i < ArrLength) {
                          create MetaData for the i-th sub-array
                          store the address of the body of the i-th sub-array to the i-th cell of the current array
-                     }
-                     ```
-                     */
-                    genQasmLabel(strArrStartLabel)
+                     } */
                     // while head: while (i < ArrLength)
+                    genQasmLabel(strArrStartLabel)
                     regArrLength = metaArrLength.register
                     genInsnGotoLabelUponCmp(regIndex, '>', regArrLength, strArrEndLabel)
 
                     // while body: allocate recursively {
-
                     var metaSubArray   = allocMetaAndStackForType(type.ptype)
                     metaSubArray.value = -1
                     createMetaData(metaSubArray, type.ptype, map)
-                    genInsnStoreArrHead(metaSubArray, regEleArrHeadAddr)
 
+			        // store the array body's pointer to the address stored in the `regEleArrHeadAddr`
+			        storeRegToMem(metaSubArray.register, 0, regEleArrHeadAddr)
                     // } end of loop body
 
                     // while tail: increase the index
@@ -1732,12 +2073,9 @@ class QuingoGenerator extends AbstractGenerator {
             // Allocate memory for the array
             var iNumOfBytesPerElement = dataSize(typeArrElement)
             var iBodyAddr             = allocStackForArrayBody(typeArrElement, iArrLength)
-            // var addr   = memoryAddr + Serializer.INT_SIZE
-            // memoryAddr = addr + iArrLength * iNumOfBytesPerElement
-
-            var iElementAddr = iBodyAddr + Serializer.INT_SIZE
 
             // Create array members
+            var iElementAddr = iBodyAddr + Serializer.INT_SIZE
             metaArray.link = new ArrayList<MetaData>
             for (var i = 0; i < iArrLength; i++) {
                 var metaElement     = allocMetaAndStackForType(type.ptype)
@@ -1760,65 +2098,69 @@ class QuingoGenerator extends AbstractGenerator {
     }
 
     /**
-     * Shift the heap pointer by `iNumOfBytes` bytes.
+     * Shift the heap pointer by an integer.
+     *
+     * @param iNumOfBytes  the number of bytes to shift
+     * @return             null
      */
     def shiftHeapPtr(int iNumOfBytes) {
         genInsnAddConst('r2', 'r2', iNumOfBytes)
     }
 
     /**
-     * Shift the heap pointer by serveral bytes of which the number is specified by the
-     *   register `regNumOfBytes`.
+     * Shift the heap pointer by the value in a register.
+     *
+     * @param regNumOfBytes  the register storing the shifting amount
+     * @return               null
      */
     def shiftHeapPtr(String regNumOfBytes) {
         genInsnAddRegs('r2', 'r2', regNumOfBytes)
     }
 
     /**
-      * Allocate a piece of heap space to store an array body, which is:
-      *     `[ length(=n), ele_0, ele_1, ele_2, ..., ele_{n-1} ]`
-      * The result of this operation is shifting the heap pointer by:
-      *     `NumOfBytes = INT_SIZE + NumOfElements * NumOfBytesPerElement`
-      * where, the extra `INT_SIZE` is used to store the length of the array.
-      */
+     * Allocate a piece of heap space to store an array body
+     * <p>
+     * The structure of an array is: `[ length(=n), ele_0, ele_1, ele_2, ..., ele_{n-1} ]`.
+     * This operation shifts the heap pointer by {@code NumOfBytes = INT_SIZE + NumOfElements * NumOfBytesPerElement}
+     * where the extra {@code INT_SIZE} is used to store the length of the array.
+     *
+     * @param typeElement        the type of the element
+     * @param metaNumOfElements  the MetaData storing the array length
+     */
     def void allocHeapForArrayBody(Type typeElement, MetaData metaNumOfElements) {
-
         var iSizeOfType = dataSize(typeElement)
 
         if (metaNumOfElements.valid.constant) {  // NumOfBytes is statically known
             var iNumOfElements = convToInt(metaNumOfElements.value)
             var iNumOfBytes = iNumOfElements * iSizeOfType + Serializer.INT_SIZE
             shiftHeapPtr(iNumOfBytes)
-            return
-
-        } else {                                // NumOfBytes is not statically known
-
+        } 
+        else {                                // NumOfBytes is not statically known
             var regNumOfBytes = allocRegister
             var regNumOfElements = metaNumOfElements.register
             genInsnForMAC(regNumOfBytes, regNumOfElements, iSizeOfType, Serializer.INT_SIZE)
             shiftHeapPtr(regNumOfBytes)
-            return
         }
-
     }
 
+    /**
+     * Allocate stack for the body of an array
+     *
+     * @param typeElement  the type of the element
+     * @param iArrLength   the length of the array
+     * @return             the address of the allocated space
+     */
     def int allocStackForArrayBody(Type typeElement, int iArrLength) {
-        var iStartAddr            = memoryAddr
-        var iNumOfBytesPerElement = dataSize(typeElement)
-
-        memoryAddr += Serializer.INT_SIZE + iArrLength * iNumOfBytesPerElement
-
+        var iStartAddr = memoryAddr
+        memoryAddr += Serializer.INT_SIZE + iArrLength * dataSize(typeElement)
         return iStartAddr
     }
 
     /**
-     * Allocate a stack space to allocate a variable with the `type`, and return the starting
-     *   address of this space.
+     * Allocate stack for a primitive type
      *
-     * For the primitive types, space is allocated to store its value. 4, 1, and 4 bytes are
-     *    allocated for `int`, `bool`, and `double`,respectively.
-     * For array, 4 bytes are allocated to store the pointer.
-     * For Tuple, the space is equal to the sum of the stack space of all elements
+     * @param type  the type of the variable
+     * @return      the address of the allocated space
      */
     def allocStackMemory(Type type) {
         var iStartAddrForVar = memoryAddr
@@ -1833,18 +2175,18 @@ class QuingoGenerator extends AbstractGenerator {
     // ----------------------------------------------------------------------------------
     // start of meta data utilities
     // ----------------------------------------------------------------------------------
-    /** Jintao: a function used to implement assignment.
-     *
-     * Params:
-     *  - `metaTarget`: meta data of the target, or left-hand side of this assignment
-     *  - `metaSource` : meta data of the source, or right-hand side of this assignment
-     *  - `type`  : the concrete type of date on both sides of the assignment
-     *  - `node`  : the concrete AST node to process, which is used to emit error message.
+    /** 
+     * Assign the value of a MetaData to another.
+     * <p>
+     * This function is the implementation of assignment. It handles all the data types.
+     * 
+     * @param metaTarget  MetaData of the target, or left-hand side of this assignment
+     * @param metaSource  meta data of the source, or right-hand side of this assignment
+     * @param type        the concrete type of date on both sides of the assignment
+     * @param node        the concrete AST node to process, which is used to emit error message.
      */
     def void assignMetaData(MetaData metaTarget, MetaData metaSource, Type type, ICompositeNode node) {
-
         if (type instanceof TupleType) {
-
             var elementTypes = (type as TupleType).type         // the list of element types
             var linkIsNull = metaTarget.link === null
 
@@ -1859,32 +2201,25 @@ class QuingoGenerator extends AbstractGenerator {
                 var typeElement = elementTypes.get(i)
 
                 var MetaData metaElement
-                if (linkIsNull) {                               // allocate element metaData
-                    metaElement = allocMetaAndStackForType(typeElement)     // allocate meta for the typeElement
+                if (linkIsNull) {                               // allocate metaData for the element
+                    metaElement = allocMetaAndStackForType(typeElement)
                     createMetaData(metaElement, typeElement, null)
                     metaElement.address = iTargetAddr
                     iTargetAddr        += typeElement.dataSize
                     metaTarget.link.add(metaElement)
-
-                } else {
-
+                } 
+                else { // metaTarget.link !== null
                     metaElement = metaTarget.link.get(i)
-
                 }
 
-                // recursively assign meta data
+                // recursively assign MetaData
                 assignMetaData(metaElement, metaSrcElement, typeElement, node)
             }
-
-            metaTarget.valid.setOnlyConstant                // meta data has the newest value
-
-        } else if (type instanceof ArrayType) {
-
+            metaTarget.valid.setOnlyConstant           // the newest value is only stored in MetaData
+        } 
+        else if (type instanceof ArrayType) {
             var typeArrElement = getArrayElementType(type)
-
-            if (metaTarget.valid.constant && metaSource.valid.constant) { // meta data is newest
-                // TODO: check if we need metaTarget is also newest here?
-
+            if (metaTarget.valid.constant && metaSource.valid.constant) { // elements are stored in MetaData
                 var iArrLength = convToInt(metaSource.value)
 
                 /* if the target meta data have not yet allocate element space, or
@@ -1896,65 +2231,51 @@ class QuingoGenerator extends AbstractGenerator {
                  */
                 if ((metaTarget.link === null) || (metaTarget.value as Integer) < iArrLength) {
                     var reg = metaTarget.register
-
-                    // use the memoryAddr to allocate the pointer of this array
-                    // this pointer points to the array body which should be in the heap space.
-                    // TODO: check if memoryAddr is the stack pointer
-                    loadImmToReg(strToGPR(reg), memoryAddr)
-
-                    //metaTarget.valid.setConAndReg
                     metaTarget.value = iArrLength
+
+                    // the space is allocated from heap, which is indicated by memoryAddr
+                    loadImmToReg(strToGPR(reg), memoryAddr)
 
                     // Allocate memory for the array
                     var addr = memoryAddr + Serializer.INT_SIZE
                     var size = dataSize(typeArrElement)
 
-                    // TODO: in the current implementation, the following line seems unnecessary
-                    // since the array body is in the heap space.
+                    // Increase the heap pointer
                     memoryAddr = addr + iArrLength * size
 
-                    // Create a `MetaData` list to allocate the array elements
+                    // Create a `MetaData` list to store the array elements
                     metaTarget.link = new ArrayList<MetaData>
 
                     for (sourceElementMeta : metaSource.link) {
-
+                        // We still need to allocated memory space for the element because it
+                        // may also need to be stored in the memory
                         var elementMeta = allocMetaAndStackForType(typeArrElement)
                         createMetaData(elementMeta, typeArrElement, null)
-                        /* in this implementation, the meta data is not stored in the heap
-                         * the stack and the heap are mixed
-                         * TODO: change it to use a unified memory model
-                         * TODO: is it possible to not allocate a memory for the meta data?
-                         *  in this way, no stack or heap allocation is required.
-                         */
                         elementMeta.address = addr
                         addr += size
 
                         assignMetaData(elementMeta, sourceElementMeta, typeArrElement, node)
-
-                        metaTarget.link.add(elementMeta)    // append this metadata
+                        metaTarget.link.add(elementMeta)    // append this MetaData
                     }
-
-                } else {
-
+                } 
+                else { // no need for allocating MetaData
+                
                     // target[0:iArrLength] = src[0:iArrLength]
                     for (var i = 0; i < iArrLength; i++) {
                         assignMetaData(metaTarget.link.get(i), metaSource.link.get(i),
                                        typeArrElement, node)
                     }
-
                     var numberOfExtraMetaData = (metaTarget.value as Integer) - iArrLength
 
                     // remove target[iArrLength:-1]
                     for (var i = 0; i < numberOfExtraMetaData; i++) {
                         metaTarget.link.remove(iArrLength)
                     }
-
                     metaTarget.value = metaSource.value     // update the target array length
                 }
-
-                metaTarget.valid.constant = true        // why not setOnlyConstant?
-
-            } else {    // meta data is not newest
+                metaTarget.valid.constant = true
+            } 
+            else {    // elements are not stored in MetaData
 
                 // write back all registers to memory at first
                 flushAllRegsToMem()
@@ -1977,65 +2298,63 @@ class QuingoGenerator extends AbstractGenerator {
                 loadImmToReg(strToGPR(regTmpSource), metaSource.address)
 
                 assignDataInMem(metaTmpTarget, metaTmpSource)
-
                 metaTarget.valid.setOnlyMem
             }
-
-        } else if (type instanceof QubitType || type instanceof FunctionType) {
-
+        } 
+        else if (type instanceof QubitType || type instanceof FunctionType) {
             metaTarget.reg = metaSource.reg
-
-        } else { // normal assignment
-
-            if (metaTarget.type instanceof PointerType) {
-                // NOTE: this is not a pure process copying the pointer.
-                // Instead, it stores the content in the regSource to the memory location pointed to by regTarget
-                var regSource = metaSource.register
-                var regTarget = metaTarget.register
-                var iOffset = metaTarget.value as Integer
-                storeRegToMem(metaSource.type, regSource, iOffset, regTarget)
-                metaTarget.valid.setOnlyReg
-                return
-            }
-
-            if (metaSource.valid.constant) {        // the newest value is in the meta data
+        }
+        else if (metaTarget.type instanceof PointerType) {
+            // NOTE: this is not a process copying the pointer.
+            // Instead, it stores the content in the regSource to the memory location pointed to by regTarget
+            var regSource = metaSource.register
+            var regTarget = metaTarget.register
+            var iOffset = metaTarget.value as Integer
+            storeRegToMem(metaSource.type, regSource, iOffset, regTarget)
+            metaTarget.valid.setOnlyReg
+        }
+        else { // Assignment for primitive types
+            if (metaSource.valid.constant) {        // the newest value is in the MetaData
                 metaTarget.valid.setOnlyConstant
                 metaTarget.value = metaSource.value
                 metaTarget.type  = copyQuingoType(metaSource.type)
                 return
-            } else if (metaSource.valid.mem) {      // the newest value is in the memory
-                metaSource.register                 // load the value into the register.
+            } 
+            else if (metaSource.valid.mem) {      // the newest value is in the memory
+                metaSource.register               // load the value into the register.
             }
+            // No need for an `else` branch because metaSource.valid.reg is handled next.
 
-            // why isn't there an `else` before `if`? Because the above statements would load the value to register.
             if (metaSource.valid.reg) {             // register has the newest value
                 var regTarget = metaTarget.register
                 var regSource = metaSource.register
                 if (metaSource.type instanceof DoubleType) {
                     genInsnFpAddRegs(regTarget, regSource, 'f0')
-                } else {
+                } 
+                else { // metaSource.type instanceof IntType or BoolType
                     genInsnMovReg(regTarget, regSource)
                 }
                 metaTarget.type = copyQuingoType(metaSource.type)
                 metaTarget.valid.setOnlyReg
             }
-            else { // metaSource.valid === Position::NONE
+            else { // this should not happen because it means that metaSource is not valid
                 writeInsnToFile
                 throw new IOException("[assignMetaData] undefined source value in line " + node.startLine + "!\n")
             }
         }
     }
 
-    /** Copy one array in the memory to another place in the memory
-     *
-     * Args:
-     *   - metaTgtData: the meta data of the target
-     *   - metaSrcData: the meta data of the source
+    /**
+     * Assignment of an array that is stored in the memory.
+     * 
+     * @param metaTgtData  the MetaData of the target
+     * @param metaSrcData  the MeteData of the source
      */
     def void assignDataInMem(MetaData metaTgtData, MetaData metaSrcData) {
 
-        var regTgtDataAddr = metaTgtData.register // address of the source/target data in the memory
-        var regSrcDataAddr = metaSrcData.register // for array, it is the address of the array head
+		// head address of the source/target data in the memory
+        var regTgtDataAddr = metaTgtData.register
+        var regSrcDataAddr = metaSrcData.register
 
         var type = metaTgtData.type
         if (type instanceof ArrayType) {
@@ -2104,7 +2423,7 @@ class QuingoGenerator extends AbstractGenerator {
             genInsnAddConst(regTgtElementAddr, regTgtArrayBodyAddr, Serializer.INT_SIZE)
 
 
-            // allocate a internal variable serving as the index to iterate over the array
+            // allocate an internal variable serving as the index to iterate over the array
             var metaIndex = allocMetaAndStackForType(QuingoIntType)
             var regIndex = metaIndex.register
             genInsnResetRegToZero(regIndex)
@@ -2131,10 +2450,8 @@ class QuingoGenerator extends AbstractGenerator {
 
             // add loop exit label
             genQasmLabel(labelArrayLoopEnd)
-
-        } else {    // for non-array values
-            // TODO: what if tuple? check if it is a bug for tuples.
-
+        } 
+        else {    // primitive values
             var regValue = allocRegister(type)
 
             // load the value to the `regValue` register
@@ -2145,13 +2462,17 @@ class QuingoGenerator extends AbstractGenerator {
         }
 
         // Advance the pointers
-        // TODO: check, why the pointers are advanced?
         var iNumOfBytes = dataSize(type)
         genInsnAddConst(regSrcDataAddr, iNumOfBytes)
         genInsnAddConst(regTgtDataAddr, iNumOfBytes)
     }
 
-
+    /**
+     * Store all the variables in memory.
+     * 
+     * @param map  symbol table of current operation
+     * @return     null
+     */
     def storeToMem(HashMap<String, MetaData> map) {
         genQasmComment('Start storing all variables to the memory')
         for (meta: map.values) {
@@ -2163,29 +2484,40 @@ class QuingoGenerator extends AbstractGenerator {
     }
 
     /**
-     * Store a variable with the name `strVarName` to the memory.
-     *
-     * If this variable cannot be found in the `map`, no action will be taken.
+     * Store a variable in memory.
+     * 
+     * @param strVarName  the name of the variable
+     * @param map         symbol table of current operation
+     * @param onlyMem     whether to disable values in MetaData (constant) or the memory (reg)
+     * @return            null
      */
     def storeToMem(String strVarName, HashMap<String, MetaData> map, Boolean onlyMem) {
         map.get(strVarName)?.storeToMem(onlyMem)
     }
 
+    /**
+     * Store a variable in memory.
+     * 
+     * @param meta  the MetaData of the variable
+     */
     def void storeToMem(MetaData meta) {
     	meta.storeToMem(true)
     }
+    
     /**
-     * Store the data back into the corresponding memory space
-     *
-     * Parameters:
-     *  - `meta`: the meta data to store
-     *  - `onlyMem`: whether set valid to onlyMem
+     * Store a variable in memory.
+     * 
+     * @param meta     the MetaData of the variable
+     * @param onlyMem  whether to disable values in MetaData (constant) or the memory (reg)
      */
     def void storeToMem(MetaData meta, Boolean onlyMem) {
         var link = meta.link
         var valid = meta.valid
 
-        if (meta.type instanceof QubitType) { return }  // skip qubit type
+		// skip qubit type
+        if (meta.type instanceof QubitType) { 
+        	return
+        }
 
         if (meta.valid.mem) {                           // data is already in the memory, skip
             valid.setOnlyMem
@@ -2204,9 +2536,11 @@ class QuingoGenerator extends AbstractGenerator {
             if (meta.type instanceof TupleType) {
 
                 // store each element in the tuple to the memory
-                for (metaTupleElement : link) { metaTupleElement.storeToMem }
-
-            } else if (meta.type instanceof ArrayType) {
+                for (metaTupleElement : link) { 
+                	metaTupleElement.storeToMem
+                }
+            } 
+            else if (meta.type instanceof ArrayType) {
 
                 // load the length of the array (immediate value) into the register regArrLength
                 var regArrLength = allocRegister()
@@ -2216,16 +2550,23 @@ class QuingoGenerator extends AbstractGenerator {
                 var regArrayHead = meta.reg
                 if (regArrayHead == "") {
                     regArrayHead = allocRegister()
-                    genInsnLoadArrBodyPtrToReg(meta, regArrayHead)
+                    
+                    // Load the address of the array to the register `regArrayHead`
+			        var insn = loadMemToReg(regArrayHead, meta.address)
+			        insn.setTrailingComment('load array body pointer')
                 }
 
-
-                // Store the array length to memory.
-                // TODO: the length is directly written to the array head, which should be arrayBodyAddr, instead.
-                genInsnWriteArrLengthToMem(regArrLength, regArrayHead)
+		        /**
+		         * Store the array length to memory.
+		         * mem_content[reg_content[`regArrayHead`]] = length of the array, i.e.,
+		         *     mem_content[pointer to array body] = length of the array
+		         */
+		        var insn = storeRegToMem(regArrLength, 0, regArrayHead)
+		        insn.setTrailingComment('write the array length to memory.')
 
                 // Store `regArrayHead` register (pointer to the array body) to the array stack address
-                genInsnStoreArrHead(regArrayHead, iDataStackAddr)
+		        insn = storeRegToMem(regArrayHead, meta.address)
+		        insn.setTrailingComment('write the array head to memory.')
 
                 // store each element of the array into memory recursively.
                 for (metaArrElement : link) {
@@ -2234,34 +2575,36 @@ class QuingoGenerator extends AbstractGenerator {
 
                 meta.link = null      // clear the link
                 meta.reg  = ""
-
-            } else if (meta.type instanceof BoolType) {
-
+            } 
+            else if (meta.type instanceof BoolType) {
                 var regValue = meta.value as Boolean? "r1": "r0"
                 storeRegToMem(meta.type, regValue, iDataStackAddr)
+            } 
+            else if (meta.type instanceof DoubleType) {
+                var regValue = allocRegister
 
-            } else {  // int or double
+                // Load the immediate float value (as binary bits) into the `regValue` register.
+                loadImmToReg(strToGPR(regValue), Float.floatToIntBits(meta.value as Float))
 
+                // Store the value into the corresponding memory.
+                storeRegToMem(regValue, iDataStackAddr)
+            } 
+            else {  // meta.type instanceof IntType
                 var regValue = allocRegister(meta.type)
 
                 // Load the immediate int or float value into the `regValue` register.
-                // TODO: There might be data lose, since the data conversion `meta.value as
-                //       Integer` may ignore the fractional part.
-                // TODO: Perform a test to verify the above conclusion.
                 loadImmToReg(strToGPR(regValue), meta.value as Integer)
 
                 // Store the value into the corresponding memory.
                 storeRegToMem(meta.type, regValue, iDataStackAddr)
             }
-
-        } else if (valid.reg) {         // this is a dynamic node
+        } 
+        else if (valid.reg) {         // this is a dynamic node
             /* The value of this variable is stored in the register.
              * Only one step is required to store this value into memory:
              *  - directly upload the value from the register to the corresponding memory position.
              */
              storeRegToMem(meta.type, meta.reg, iDataStackAddr)
-            // TODO: what if array and tuple? their bulk data is not stored?
-            // As Jintao noted, when valid.reg is true, the elements have already been stored in memory.
         }
 
         // after all data is stored to the memory, modify the `valid` label accordingly.
@@ -2272,12 +2615,15 @@ class QuingoGenerator extends AbstractGenerator {
 
     /**
      * Get the associated register of the given metadata, and ensure the register contains the newest data.
-     *
-     *  - If this metaData does not have an associated register yet, create a new one,
-     *  - Load the value to the register to ensure it has the newest value.
+     * <p>
+     * If this metaData does not have an associated register yet, this function creates a new one.
+     * <p>
+     * The function loads the value to the register to ensure it has the newest value.
+     * 
+     * @param meta  input MetaData
+     * @return      the name of the register
      */
     def String getRegister(MetaData meta) {
-
         var valid = meta.valid
 
         if (valid.reg) {        // the associated register has the newest value for the variable
@@ -2286,42 +2632,29 @@ class QuingoGenerator extends AbstractGenerator {
 
         if (meta.reg.equals("")) {          // no associated register yet, allocate one.
             meta.reg = allocRegister(meta.type)
-            // println("Get a new register: " + meta.reg)
         }
 
         val type = meta.type
         if (valid.constant) {
             /** if the meta data has the newest value, load the value to the associated register */
             if (type instanceof BoolType) {            // bool
-
                 var src = (meta.value as Boolean)? "r1": "r0"
                 genInsnMovReg(meta.reg, src)
-
-            } else if (type instanceof DoubleType) {   // float
+            } 
+            else if (type instanceof DoubleType) {   // float
                 var regTempTransfer = allocRegister
                 loadFpImmToReg(meta.reg, meta.value as Float, regTempTransfer)
-
-            } else if (type instanceof ArrayType) {    // array
-                var insn = loadMemToReg(meta.reg, meta.address)
-
-            } else {                                        // tuple, int
-
-                if (type instanceof TupleType) {  // TODO: check why tuple can work here.
-                    System.err.println('getRegister: assign meta.value to reg, which may be useless. Continue.')
-                }
-
+            } 
+            else if (type instanceof ArrayType) {    // array
+                loadMemToReg(meta.reg, meta.address)
+            } 
+            else {                                        // tuple, int
                 loadImmToReg(strToGPR(meta.reg), meta.value as Integer)
-
             }
-
-        } else if (valid.mem) {
-            var insn = loadMemToReg(type, meta.reg, meta.address)
-
-        } else {
-//            println("getRegister: Neither valid.constant or valid.mem is true for register: " + meta.reg)
-            // throw new Exception("getRegister: Information in the MetaData is broken for the register: " + meta.reg)
-
-        }
+        } 
+        else if (valid.mem) {
+            loadMemToReg(type, meta.reg, meta.address)
+        } 
 
         valid.reg = true
         mapRegToMetadata.put(meta.reg, meta)
@@ -2333,51 +2666,18 @@ class QuingoGenerator extends AbstractGenerator {
     // end of meta data utilities
     // ----------------------------------------------------------------------------------
 
-    /**
-     * Loads the pointer to the body of the array (`metaArray`) to the register (`regArrayBodyPtr`)
-     */
-    def genInsnLoadArrBodyPtrToReg(MetaData metaArray, String regArrayBodyPtr) {
-        /** `metaArray.address` is the stack address of the array, which stores the pointer
-         * to the array body (which should reside in the heap).
-         * As a result: reg_content[`regArrayHead`] = pointer to the array body
-         */
-        var iArrBodyAddr = metaArray.address
-        var insn = loadMemToReg(regArrayBodyPtr, iArrBodyAddr)
-        insn.setTrailingComment('load array body pointer')
-    }
-
-    def genInsnWriteArrLengthToMem(String regArrLength, String regArrayBodyPtr) {
-        /**
-         * mem_content[reg_content[`regArrayBodyPtr`]] = length of the array, i.e.,
-         *     mem_content[pointer to array body] = length of the array
-         */
-        var insn = storeRegToMem(regArrLength, 0, regArrayBodyPtr)
-        insn.setTrailingComment('write the array length to memory.')
-    }
-
-    def genInsnStoreArrHead(String regArrayHead, int iArrayAddr) {
-        var insn = storeRegToMem(regArrayHead, iArrayAddr)
-        insn.setTrailingComment('write the array head to memory.')
-    }
-
-    def genInsnStoreArrHead(MetaData metaArray, String regAddr) {
-        // this register contains the array head, i.e., the array body address.
-        var regArrHead = metaArray.register
-        // store the pointer to the array body to the address stored in the `regAddr`
-        storeRegToMem(regArrHead, 0, regAddr)
-    }
     // ----------------------------------------------------------------------------------
     // start of serialization
     // ----------------------------------------------------------------------------------
+
     /**
-     * Serialize the return data and put it in the shared memory.
-     *
-     * Parameters:
-     *  - `metaStackPtr`    : the pointer to the stack head.
-     *  - `metaHeapPtr`     : the pointer to the heap head, from which point on, the memory space
-     *                         is free and can be used to locate data.
-     *  - `metaDataToExport`: the meta data of the variable is to be exported
-     *  - `type`            : the `type` in which the variable is to be exported
+     * Serialize data and put it in the shared memory.
+     * 
+     * @param metaMockStackPtr  the pointer to the stack head
+     * @param metaHeapPtr       the pointer to the heap head, from which point on, the memory space
+     *                          is free and can be used to locate data.
+     * @param metaDataToExport  the MetaData to be exported
+     * @param type              the data type of the exported data
      */
     def void exportMetaData(MetaData metaMockStackPtr, MetaData metaMockHeapPtr,
                             MetaData metaDataToExport, Type type) {
@@ -2392,7 +2692,7 @@ class QuingoGenerator extends AbstractGenerator {
         iMockHeapPtr          = Math.max(iMockHeapPtr, iMockStackPtr + dataSize(type))
         metaMockHeapPtr.value = iMockHeapPtr
 
-        if (type instanceof TupleType) {            // Tuple
+        if (type instanceof TupleType) {
 
             // meta data for this tuple?
             var metaTmpStackPtr   = new MetaData
@@ -2414,14 +2714,15 @@ class QuingoGenerator extends AbstractGenerator {
                 var curElementTypeSize = dataSize(elementTypes.get(i))
                 var curElement         = metaDataToExport.link.get(i)
 
+				// recursively export the elements of the tuple
                 exportMetaData(metaTmpStackPtr, metaMockHeapPtr, curElement, curElementType)
 
                 // After one element is exported, it occupies the export stack space. Hence,
                 //   the mock stack head should move forward.
                 metaTmpStackPtr.value = convToInt(metaTmpStackPtr.value) + curElementTypeSize
             }
-
-        } else if (type instanceof ArrayType) {     // Array
+        }
+        else if (type instanceof ArrayType) {
 
             var typeArrElement  = getArrayElementType(type)
             var iSizeArrElement = dataSize(typeArrElement)
@@ -2433,16 +2734,13 @@ class QuingoGenerator extends AbstractGenerator {
                 var offset    = iMockHeapPtr - iMockStackPtr // = array body address - array pointer address
                 loadImmToReg(strToGPR(regOffset), offset, "load offset (array body <-> head)")
 
-                // TODO:Jintao: why the write address is iMockStackPtr + regStackPtr?
-                // it seems iMockStackPtr and iMockHeapPtr are both relative addresses
+                // The write address is iMockStackPtr + regStackPtr
                 var regStackPtr = metaMockStackPtr.register
-
                 var insn = storeRegToMem(regOffset, iMockStackPtr, regStackPtr)
                 insn.setTrailingComment('Store array offset to memory address: regStackPtr + iMockStackPtr (' + iMockStackPtr + ')')
 
                 // Store the length to the heap
                 var length = metaDataToExport.value as Integer
-
                 loadImmToReg(strToGPR(regOffset), length, 'store the array length (' + length + ') to the reg')
 
                 insn = storeRegToMem(regOffset, iMockHeapPtr, regStackPtr)
@@ -2464,8 +2762,8 @@ class QuingoGenerator extends AbstractGenerator {
                     exportMetaData(metaTmpStackPtr, metaMockHeapPtr, member, typeArrElement)
                     metaTmpStackPtr.value = (metaTmpStackPtr.value as Integer) + iSizeArrElement
                 }
-
-            } else {                    // the length of the array is unknown
+            } 
+            else {                    // the length of the array is unknown during compilation
 
                 // flush all registers by storing the data back into the correct memory space
                 flushAllRegsToMem()
@@ -2503,31 +2801,29 @@ class QuingoGenerator extends AbstractGenerator {
                 genInsnAddConst(regMockHeapPtr, -convToInt(metaMockHeapPtr.value))
                 metaMockHeapPtr.valid.setOnlyReg
             }
-
-        } else if (type instanceof BoolType) {
-
+        } 
+        else if (type instanceof BoolType) {
             var String regBoolValue
             if (metaDataToExport.valid.constant) {      // r1, r0 are constantly 1 and 0, respectively.
                 regBoolValue = (metaDataToExport.value as Boolean)? "r1": "r0"
-            } else {
+            } 
+            else {
                 regBoolValue = metaDataToExport.register
             }
 
-            var regMockStackPtr = metaMockStackPtr.register
-            storeRegToMem(type, regBoolValue, iMockStackPtr, regMockStackPtr)
-
-        } else if (type instanceof DoubleType) {
+            storeRegToMem(type, regBoolValue, iMockStackPtr, metaMockStackPtr.register)
+        } 
+        else if (type instanceof DoubleType) {
 
             var regTempTransfer = allocRegister
             if (metaDataToExport.valid.constant) {
                 loadImmToReg(strToGPR(regTempTransfer), Float.floatToIntBits(metaDataToExport.value as Float))
-
-            } else if (metaDataToExport.valid.reg) {
-
+            } 
+            else if (metaDataToExport.valid.reg) {
                 var fregDataToExport = metaDataToExport.reg
                 moveFprToGpr(regTempTransfer, fregDataToExport)
-
-            } else {
+            } 
+            else {
                 loadMemToReg(type, regTempTransfer, metaDataToExport.address)
             }
 
@@ -2539,8 +2835,8 @@ class QuingoGenerator extends AbstractGenerator {
              */
             // storeRegToMem(type, regTempTransfer, iMockStackPtr, regMockStackPtr)
             storeRegToMem(regTempTransfer, iMockStackPtr, regMockStackPtr)
-        } else {
-
+        } 
+        else {
             var regDataToExport = metaDataToExport.register
             var regMockStackPtr = metaMockStackPtr.register
             storeRegToMem(type, regDataToExport, iMockStackPtr, regMockStackPtr)
@@ -2549,10 +2845,13 @@ class QuingoGenerator extends AbstractGenerator {
     }
 
     /**
-     * Export data structures that stored in the memory
-     * taddr: current address to be written
-     * faddr: the starting address that is metaHeapPtr
-     * raddr: the address of the to-be-exported data
+     * Serialize data (stored in memory) and put it in the shared memory.
+     * 
+     * @param regMockStackPtr  the pointer to the stack head
+     * @param regMockHeapPtr   the pointer to the heap head, from which point on, the memory space
+     *                          is free and can be used to locate data.
+     * @param regDataToExport  the register pointing to the exporting data
+     * @param type             the data type of the exporting data
      */
     def void exportMetaData(String regMockStackPtr, String regMockHeapPtr,
                             String regDataToExport, Type type) {
@@ -2578,7 +2877,8 @@ class QuingoGenerator extends AbstractGenerator {
                 genInsnAddConst(regDataToExport, dataSize(ele))
             }
 
-        } else if (type instanceof ArrayType) {
+        } 
+        else if (type instanceof ArrayType) {
             genInsnForArith(temp, regMockHeapPtr, '-', regMockStackPtr)
             storeRegToMem(type, temp, 0, regMockStackPtr)
 
@@ -2601,9 +2901,7 @@ class QuingoGenerator extends AbstractGenerator {
             loadImmToReg(strToGPR(temp), psize)
 
             genInsnMulRegs(temp, temp, length)
-
             genInsnAddRegs(regMockHeapPtr, regMockHeapPtr, temp)
-
             genInsnAddConst(regMockHeapPtr, Serializer.INT_SIZE)
 
             genInsnResetRegToZero(temp)
@@ -2618,14 +2916,12 @@ class QuingoGenerator extends AbstractGenerator {
             genInsnAddConst(tarray, psize)
             genInsnAddConst(rarray, psize)
 
-
             genInsnAddConst(temp, 1)    // index = index + 1
 
             insertQasmGoto(strArrLabel)
             genQasmLabel(strArrEndLabel)
-
-        } else {
-
+        } 
+        else { // primitive types
             loadMemToReg (type, temp, 0, regDataToExport)
             storeRegToMem(type, temp, 0, regMockStackPtr)
         }
@@ -2637,84 +2933,60 @@ class QuingoGenerator extends AbstractGenerator {
     // ----------------------------------------------------------------------------------
     // start of the eQASM instruction region
     // ----------------------------------------------------------------------------------
-    static val r0 = new GPR(0)
-    static val r1 = new GPR(1)
-    static val r2 = new GPR(2)
-    static val f0 = new FPR(0)
 
-
-    def genInsnForWhileHead(Expression expCondition, String whileStartLabel,
-                            String whileEndLabel, HashMap<String, MetaData> map) {
-        // generate a start label for the while loop
-        genQasmLabel(whileStartLabel)
-
-        // generate instructions which evaluates the while condition
-        // with the while condition result written into the `reg` register
-        var metaCondResult = expCondition.compile(map)
-        var regCondRes = metaCondResult.register
-        // if the result is not true (1), goto while end label (skip the while body)
-        var insn = gotoLabelIfNotEqual(regCondRes, 'r1', whileEndLabel)
-        // var insn = addEqasmBne(regCondRes, 'r1', whileEndLabel)
-        insn.setTrailingComment("skip the while body if condition not satisfied.")
-    }
-
-    def genInsnForWhileBody(BlockStatement whileBody, HashSet<String> setVarNames,
-                            HashMap<String, MetaData> map) {
-        whileBody.compile(map)
-        storeVarsToMem(setVarNames, map, true)
-    }
-
-    def genInsnForWhileTail(String whileStartLabel, String whileEndLabel) {
-        // unconditionally jump back to the loop start to evaluate the while condition
-        insertQasmGoto(whileStartLabel)
-
-        // add the while end label after the entire while body
-        genQasmLabel(whileEndLabel)
-    }
-
+    /**
+     * Store the address of the heap top to a register.
+     * 
+     * @param regTarget  the name of the register
+     * @return           null
+     */
     def loadHeapPtrToReg(String regTarget) {
         var insn = genInsnMovReg(regTarget, 'r2')
         insn.setTrailingComment('load heap pointer')
     }
 
+    /**
+     * Store all the register to memory
+     * 
+     * @return  null
+     */
     def flushAllRegsToMem() {
         genQasmComment('Clean the registers')
-        for (m : mapRegToMetadata.values) { m.storeToMem }
+        for (m : mapRegToMetadata.values) { 
+        	m.storeToMem
+        }
         genQasmComment('End of register clean')
     }
 
+    /**
+     * Store a set of variable in memory.
+     * 
+     * @param strVarName  the names of the variable
+     * @param map         symbol table of current operation
+     * @param onlyMem     whether to disable values in MetaData (constant) or the memory (reg)
+     * @return            null
+     */
     def storeVarsToMem(HashSet<String> setVarNames, HashMap<String, MetaData> map, Boolean onlyMem) {
-        // genQasmComment("storeToMem starts")
-
         for (variable: setVarNames) {
             variable.storeToMem(map, onlyMem)
         }
-
-        // genQasmComment("storeToMem finishes")
     }
 
-    def jumpBackToLoopStart(int index) {
-        var loopStartLabel = genLoopStartLabel(index)
-        insertQasmGoto(loopStartLabel)
-    }
-
-    def jumpToFunctionEnd(int index) {
-        var funcEndLabel = genFuncEndLabel(index)
-        insertQasmGoto(funcEndLabel)
-    }
-
-    def jumpToLoopEnd(int index) {
-        var loopEndLabel = genLoopEndLabel(index)
-        insertQasmGoto(loopEndLabel)
-    }
-
+    /**
+     * Convert a Float parameter to eQASM style.
+     * 
+     * @param opName  the names of the variable
+     * @param param   the value of the parameter
+     * @return        the generated eQASM instruction op
+     */
     def genOpNameWithParam(String opName, Float param) {
         var Float absParam
         var String mSign
         if (param >= 0) {
             mSign = ''
             absParam = param
-        } else {
+        } 
+        else {
             mSign = 'm'
             absParam = -param
         }
@@ -2722,6 +2994,14 @@ class QuingoGenerator extends AbstractGenerator {
         return opName + mSign + absParam.toString.replace('.', '_')
     }
 
+    /**
+     * Generate the eQASM instructions of the measurement operation.
+     * 
+     * @param MsmtEqasmName  the eQASM instruction name of the measurement operation
+     * @param regQotrs       the register of the qubit
+     * @param iMsmtDuration  the duration of the measurement operation
+     * @return               a metaData containing the measurement result
+     */
     def genInsnForMsmt(String MsmtEqasmName, String regQotrs, int iMsmtDuration) {
         genInsnSQOperation(1, MsmtEqasmName, regQotrs)
         genInsnWait(iMsmtDuration - 3)
@@ -2736,25 +3016,6 @@ class QuingoGenerator extends AbstractGenerator {
         metaMsmtRes.valid.setOnlyReg
         metaMsmtRes.type = QuingoBoolType
         return metaMsmtRes
-    }
-
-    def genInsnWait(MetaData metaWaitTime) {
-        if (metaWaitTime.valid.constant) {      // if the waiting time is already known
-            val immWaitTime = metaWaitTime.value as Integer
-            genInsnWait(immWaitTime)
-        } else {                                // otherwise, in the register (int-type meta)
-            var reg = metaWaitTime.register
-            genInsnWait(reg)
-        }
-    }
-
-    // TODO: remove this function
-    def genInsnWaitBasedInit(FunDeclaration fun) {
-        // TODO: this `init` implementation assumes a wait-based scheme,
-        // which is not read from the configuration. Wierd.
-
-        val OpDuration = fetchConfig(fun, fun.name, "duration") as Integer
-        genInsnWait(OpDuration)
     }
 
     // ----------------------------------------------------------------------------------
@@ -2788,6 +3049,7 @@ class QuingoGenerator extends AbstractGenerator {
     def genArrStartLabel(int index) {
         return "ARRAY_" + index
     }
+    
     def genArrEndLabel(int index) {
         return "ARRAY_" + index + "_END"
     }
@@ -2807,33 +3069,63 @@ class QuingoGenerator extends AbstractGenerator {
     // ----------------------------------------------------------------------------------
     // Utilities
     // ----------------------------------------------------------------------------------
+    /**
+     * Get the {@code Type} of an {@code Expression}.
+     * 
+     * @param expr  the Expression to be analyzed
+     * @return      the Type of the input Expression
+     */
     def getQuingoTypeOfExpr(Expression expr) {
         return xsemantics.exptype(expr).value
     }
 
+    /**
+     * Return a deep copy of a {@code Type}.
+     * 
+     * @param type  the original Type
+     * @return      the copy of the input Type
+     */
     def copyQuingoType(Type type) {
-        // Maybe `type` can be directly returned.
-        // However, Jintao found this can introduce some bug in some cases, which cases cannot be found now.
         return xsemantics.copytype(type).value
     }
 
+    /**
+     * Write generated eQASM instructions to file.
+     * 
+     * @return  null
+     */
     def writeInsnToFile() {
         writeInsnToFile(fsaGlobal, fileName)
     }
 
-    def getSizeArrLength() {
-        return Serializer.INT_SIZE
-    }
-
+    /**
+     * Convert an Object into int.
+     * 
+     * @param value  the input Object
+     * @return       the converted value
+     */
     def convToInt(Object value) {
         return (value as Integer).intValue
     }
 
+    /**
+     * Get the type of the elements in an array.
+     * 
+     * @param type  the Type of the array
+     * @return      the Type of the element
+     */
     def getArrayElementType(Type type) {
         return (type as ArrayType).ptype
     }
 
-    def fetchConfig(EObject e, String item, String field) {
+    /**
+     * Fetch a value in the configuration.
+     * 
+     * @param item   the name of the configuration item, such as "X"
+     * @param field  the name of the query field, such as "type"
+     * @return       the value corresponding to the query field, either a string or an integer
+     */
+    def fetchConfig(String item, String field) {
         var opaque = config.get(item)
         if (opaque === null) {
             throw new IOException("[fetchConfig] Cannot find the configuration for " + item)
@@ -2845,37 +3137,46 @@ class QuingoGenerator extends AbstractGenerator {
         }
     }
 
-    def printNode(ICompositeNode node) {
-        // println("current statement node:   " + node.getText.strip)
-    }
-
+    /**
+     * Convert a {@code Type} to a string.
+     * 
+     * @param type  a {@code Type}
+     * @return      the converted string
+     */
     def String convTypeToStr(Type type) {
-
-        if (type instanceof IntType) { return 'int' }
-
-        if (type instanceof BoolType) { return 'bool' }
-
-        if (type instanceof DoubleType) { return 'double'}
-
-        if (type instanceof TupleType) {
+        if (type instanceof IntType) { 
+        	return 'int'
+        }
+        else if (type instanceof BoolType) { 
+        	return 'bool'
+        }
+        else if (type instanceof DoubleType) { 
+        	return 'double'
+        }
+        else if (type instanceof TupleType) {
             var elementTypes = (type as TupleType).type
             var strElements = String.join(',', elementTypes.map[convTypeToStr(it)])
             return '(' + strElements + ')'
         }
-
-        if (type instanceof ArrayType) { return convTypeToStr(getArrayElementType(type)) + '[]' }
+        else if (type instanceof ArrayType) { 
+        	return convTypeToStr(getArrayElementType(type)) + '[]'
+        }
 
         throw new Exception('Found an unsupported type.')
     }
 
     /**
      * Read the integer value from its string representation `intStr`.
+     * 
+     * @param intStr  a string representing an integer
+     * @return        the converted integer
      */
     def intFromString(String intStr) {
         try {
             val Integer intValue = new Integer(intStr)
             return intValue
-        } catch(Exception e) {
+        } 
+        catch(Exception e) {
             var errMsg = String.format(
                 "Error happens while coverting the following string into an integer: %s", intStr)
             System.err.println(errMsg)
@@ -2884,6 +3185,12 @@ class QuingoGenerator extends AbstractGenerator {
         }
     }
 
+    /**
+     * Check whether a block contains Break or Continue statements.
+     * 
+     * @param block  a BlockStatement
+     * @return       whether the block contains Break or Continue statements
+     */
 	def Boolean containBreakOrContinue(BlockStatement block) {
 		for (stat: block.stats) {
 			if (stat instanceof BreakStatement) {

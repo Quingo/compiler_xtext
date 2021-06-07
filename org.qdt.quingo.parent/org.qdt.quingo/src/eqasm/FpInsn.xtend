@@ -1,36 +1,12 @@
 package eqasm
 import eqasm.GPR
 import eqasm.FPR
-import java.util.ArrayList
 
-class FpInsn {
-	def static void main(String[] args) {
-
-	  	val fd = new FPR(19)
-	  	val fs = new FPR(27)
-	  	val ft = new FPR(4)
-	  	val rd = new GPR(11)
-
-	  	var insnArray = new ArrayList<EqasmBase>
-
-	  	insnArray.add(new EqasmFcvtws(rd, fs))
-	  	insnArray.add(new EqasmFcvtsw(fs, rd))
-	 	insnArray.add(new EqasmFlw(fd, 100, rd)) // # FLW fd, imm(rs)
-	 	insnArray.add(new EqasmFsw(fs, 100, rd)) // # FSW fs, imm(rs)
-	  	insnArray.add(new EqasmFadds(fd, fs, ft))
-	  	insnArray.add(new EqasmFsubs(fd, fs, ft))
-	  	insnArray.add(new EqasmFmuls(fd, fs, ft))
-	  	insnArray.add(new EqasmFdivs(fd, fs, ft))
-	  	insnArray.add(new EqasmFles(rd, fs, ft))
-	  	insnArray.add(new EqasmFeqs(rd, fs, ft))
-	  	insnArray.add(new EqasmFlts(rd, fs, ft))
-
-	  	insnArray.forEach[println(str())]
-	}
-}
-
-//eqasm_insn.FCVT_W_S: ['rd', 'fs'],        # FCVT.W.S rd, fs
-//eqasm_insn.FCVT_S_W: ['fd', 'rs'],        # FCVT.S.W fd, rs
+/**
+ * eQASM FCVT_W_S instruction.
+ * <p>
+ * Example: FCVT.W.S rd, fs
+ */
 class EqasmFcvtws extends EqasmBase {
 	GPR rd
 	FPR fs
@@ -46,6 +22,11 @@ class EqasmFcvtws extends EqasmBase {
 	}
 }
 
+/**
+ * eQASM FCVT_S_W instruction.
+ * <p>
+ * Example: FCVT.S.W fd, rs
+ */
 class EqasmFcvtsw extends EqasmBase {
 	FPR fd
 	GPR rs
@@ -62,6 +43,8 @@ class EqasmFcvtsw extends EqasmBase {
 }
 
 /**
+ * eQASM FMV.W.X instruction.
+ * <p>
  * FMV.W.X moves the single-precision value encoded in IEEE 754-2008 standard encoding from the lower 32 bits
  * of GPR rs to the FPR fd
  */
@@ -81,6 +64,8 @@ class EqasmFmvwx extends EqasmBase {
 }
 
 /**
+ * eQASM FMV.X.W instruction.
+ * <p>
  * Move the lower 32 bits of IEEE 754-2008 standard encoding of a FP value from FPR fs to GPR rd
  */
 class EqasmFmvxw extends EqasmBase {
@@ -98,8 +83,11 @@ class EqasmFmvxw extends EqasmBase {
 	}
 }
 
-//eqasm_insn.FLW: ['fd', 'imm', 'rs'],      # FLW fd, imm(rs)
-//eqasm_insn.FSW: ['fs', 'imm', 'rs'],      # FSW fs, imm(rs)
+/**
+ * eQASM FLW instruction.
+ * <p>
+ * Example: FLW fd, imm(rs)
+ */
 class EqasmFlw extends EqasmBase {
 	FPR fd
 	ImmValue imm
@@ -117,6 +105,11 @@ class EqasmFlw extends EqasmBase {
 	}
 }
 
+/**
+ * eQASM FSW instruction.
+ * <p>
+ * Example: FSW fs, imm(rs)
+ */
 class EqasmFsw extends EqasmBase {
 	FPR fs
 	ImmValue imm
@@ -134,6 +127,9 @@ class EqasmFsw extends EqasmBase {
 	}
 }
 
+/**
+ * eQASM floating point instruction base.
+ */
 abstract class FpInsnBase extends EqasmBase {
 	public FPR fs
 	public FPR ft
@@ -144,7 +140,9 @@ abstract class FpInsnBase extends EqasmBase {
 	}
 }
 
-
+/**
+ * eQASM FNEG.S instruction.
+ */
 class EqasmFnegs extends EqasmBase {
 	public FPR fd
 	public FPR fs
@@ -160,11 +158,9 @@ class EqasmFnegs extends EqasmBase {
 	}
 }
 
-
-//eqasm_insn.FADD_S: ['fd', 'fs', 'ft'],  # FADD.S fd, fs, ft
-//eqasm_insn.FSUB_S: ['fd', 'fs', 'ft'],  # FSUB.S fd, fs, ft
-//eqasm_insn.FMUL_S: ['fd', 'fs', 'ft'],  # FMUL.S fd, fs, ft
-//eqasm_insn.FDIV_S: ['fd', 'fs', 'ft'],  # FDIV.S fd, fs, ft
+/**
+ * Base class for eQASM floating point instructions that have three operands.
+ */
 class ThreeFpInsnBase extends FpInsnBase {
 	FPR fd
 
@@ -178,6 +174,11 @@ class ThreeFpInsnBase extends FpInsnBase {
 	}
 }
 
+/**
+ * eQASM FADD.S instruction.
+ * <p>
+ * Example: FADD.S fd, fs, ft
+ */
 class EqasmFadds extends ThreeFpInsnBase {
 	new (FPR _fd, FPR _fs, FPR _ft) {
 		super(_fd, _fs, _ft)
@@ -185,6 +186,11 @@ class EqasmFadds extends ThreeFpInsnBase {
 	}
 }
 
+/**
+ * eQASM FSUB.S instruction.
+ * <p>
+ * Example: FSUB.S fd, fs, ft
+ */
 class EqasmFsubs extends ThreeFpInsnBase {
 	new (FPR _fd, FPR _fs, FPR _ft) {
 		super(_fd, _fs, _ft)
@@ -192,6 +198,11 @@ class EqasmFsubs extends ThreeFpInsnBase {
 	}
 }
 
+/**
+ * eQASM FMUL.S instruction.
+ * <p>
+ * Example: FMUL.S fd, fs, ft
+ */
 class EqasmFmuls extends ThreeFpInsnBase {
 	new (FPR _fd, FPR _fs, FPR _ft) {
 		super(_fd, _fs, _ft)
@@ -199,6 +210,11 @@ class EqasmFmuls extends ThreeFpInsnBase {
 	}
 }
 
+/**
+ * eQASM FDIV.S instruction.
+ * <p>
+ * Example: FDIV.S fd, fs, ft
+ */
 class EqasmFdivs extends ThreeFpInsnBase {
 	new (FPR _fd, FPR _fs, FPR _ft) {
 		super(_fd, _fs, _ft)
@@ -206,6 +222,9 @@ class EqasmFdivs extends ThreeFpInsnBase {
 	}
 }
 
+/**
+ * Base class for floating point comparison instructions in eQASM.
+ */
 class FcmpInsn extends FpInsnBase {
 	GPR rd
 
@@ -219,9 +238,11 @@ class FcmpInsn extends FpInsnBase {
 	}
 }
 
-//eqasm_insn.FEQ_S: ['rd', 'fs', 'ft'],   # FEQ.S rd, fs, ft
-//eqasm_insn.FLT_S: ['rd', 'fs', 'ft'],   # FLT.S rd, fs, ft
-//eqasm_insn.FLE_S: ['rd', 'fs', 'ft']    # FLE.S rd, fs, ft
+/**
+ * eQASM FEQ.S instruction.
+ * <p>
+ * Example: FEQ.S rd, fs, ft
+ */
 class EqasmFeqs extends FcmpInsn {
 	new (GPR _rd, FPR _fs, FPR _ft) {
 		super(_rd, _fs, _ft)
@@ -229,6 +250,11 @@ class EqasmFeqs extends FcmpInsn {
 	}
 }
 
+/**
+ * eQASM FLT.S instruction.
+ * <p>
+ * Example: FLT.S rd, fs, ft
+ */
 class EqasmFlts extends FcmpInsn {
 	new (GPR _rd, FPR _fs, FPR _ft) {
 		super(_rd, _fs, _ft)
@@ -236,11 +262,14 @@ class EqasmFlts extends FcmpInsn {
 	}
 }
 
-
+/**
+ * eQASM FLE.S instruction.
+ * <p>
+ * Example: FLE.S rd, fs, ft
+ */
 class EqasmFles extends FcmpInsn {
 	new (GPR _rd, FPR _fs, FPR _ft) {
 		super(_rd, _fs, _ft)
 		this.setInsnName('fle.s')
 	}
 }
-

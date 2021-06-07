@@ -1,8 +1,11 @@
 package eqasm
 import eqasm.EqasmBase
 
-
-// BR <cmp_flag>, <target_label>
+/**
+ * eQASM BR instruction.
+ * <p>
+ * BR <cmp_flag>, <target_label>
+ */
 class EqasmBr extends EqasmBase {
 	String CmpFlag
 	String TargetLabel
@@ -18,7 +21,11 @@ class EqasmBr extends EqasmBase {
 	}
 }
 
-//# FBR <cmp_flag>, Rd
+/**
+ * eQASM FBR instruction.
+ * <p>
+ * FBR <cmp_flag>, Rd
+ */
 class EqasmFbr extends EqasmBase {
 	String CmpFlag
 	GPR rd
@@ -34,7 +41,11 @@ class EqasmFbr extends EqasmBase {
 	}
 }
 
-// CMP Rs, Rt
+/**
+ * eQASM CMP instruction.
+ * <p>
+ * CMP Rs, Rt
+ */
 class EqasmCmp extends EqasmBase {
 	GPR rs
 	GPR rt
@@ -49,8 +60,11 @@ class EqasmCmp extends EqasmBase {
 	}
 }
 
-
-// BEQ rs, rt, <target_label>
+/**
+ * eQASM BEQ instruction.
+ * <p>
+ * BEQ rs, rt, <target_label>
+ */
 class EqasmBeq extends EqasmBase {
 	GPR rs
 	GPR rt
@@ -68,7 +82,11 @@ class EqasmBeq extends EqasmBase {
 	}
 }
 
-// BNE rs, rt, <target_label>
+/**
+ * eQASM BNE instruction.
+ * <p>
+ * BNE rs, rt, <target_label>
+ */
 class EqasmBne extends EqasmBase {
 	GPR rs
 	GPR rt

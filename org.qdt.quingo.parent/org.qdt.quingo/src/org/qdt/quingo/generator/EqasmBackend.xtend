@@ -1,19 +1,72 @@
 package org.qdt.quingo.generator
 
-import eqasm.*
-import org.junit.jupiter.api.Assertions
-
-import org.qdt.quingo.quingo.Type
-import org.qdt.quingo.quingo.DoubleType
-import org.qdt.quingo.quingo.BoolType
+import eqasm.EqasmAdd
+import eqasm.EqasmAddi
+import eqasm.EqasmAnd
+import eqasm.EqasmBase
+import eqasm.EqasmBeq
+import eqasm.EqasmBne
+import eqasm.EqasmBr
+import eqasm.EqasmCmp
+import eqasm.EqasmComment
+import eqasm.EqasmDiv
+import eqasm.EqasmFadds
+import eqasm.EqasmFbr
+import eqasm.EqasmFcvtsw
+import eqasm.EqasmFcvtws
+import eqasm.EqasmFdivs
+import eqasm.EqasmFeqs
+import eqasm.EqasmFles
+import eqasm.EqasmFlts
+import eqasm.EqasmFlw
+import eqasm.EqasmFmr
+import eqasm.EqasmFmuls
+import eqasm.EqasmFmvwx
+import eqasm.EqasmFmvxw
+import eqasm.EqasmFnegs
+import eqasm.EqasmFsubs
+import eqasm.EqasmFsw
+import eqasm.EqasmLb
+import eqasm.EqasmLdi
+import eqasm.EqasmLdui
+import eqasm.EqasmLw
+import eqasm.EqasmMul
+import eqasm.EqasmNop
+import eqasm.EqasmOr
+import eqasm.EqasmPureLabel
+import eqasm.EqasmQBundle
+import eqasm.EqasmQwait
+import eqasm.EqasmQwaitr
+import eqasm.EqasmRem
+import eqasm.EqasmSb
+import eqasm.EqasmSmis
+import eqasm.EqasmSmit
+import eqasm.EqasmStop
+import eqasm.EqasmSub
+import eqasm.EqasmSw
+import eqasm.EqasmXor
+import eqasm.FPR
+import eqasm.GPR
+import eqasm.QubitPair
 import java.util.ArrayList
-import static extension org.qdt.quingo.generator.StringToReg.*
 import org.eclipse.xtext.generator.IFileSystemAccess2
+import org.junit.jupiter.api.Assertions
+import org.qdt.quingo.quingo.BoolType
+import org.qdt.quingo.quingo.DoubleType
+import org.qdt.quingo.quingo.Type
 
+import static org.qdt.quingo.generator.StringToReg.*
+
+/**
+ * A backend that generate eQASM instructions
+ * 
+ * @author Xiang Fu
+ */
 class EqasmBackend {
     
-    /** Reset the backend status. 
-     * 
+    /**
+     * Reset the backend status. 
+     * <p>
      * For now, it clears the instructions which are generated in the previous compilation round.
      * This function is expected to be called before a new compilation.
      */
@@ -28,14 +81,10 @@ class EqasmBackend {
     static val r0 = new GPR(0)
     static val r1 = new GPR(1)
     static val r2 = new GPR(2)
-    static val r3 = new GPR(3)
     static val f0 = new FPR(0)
-    static val f1 = new FPR(1)
-    static val f2 = new FPR(2)
-    static val f3 = new FPR(3)
 
     /**
-     * To ensure -2^(31) <= value <= 2^31 - 1
+     * To ensure -2^31 <= value <= 2^31 - 1
      */
     static def checkRange(int value) {
         val maxSignedInt32 = (1 << 31) - 1
@@ -65,7 +114,6 @@ class EqasmBackend {
         val r0 = new GPR(0)
 
         if (-0x1000 < value && value < 0x1000) {
-        	// TODO: why here use addi instead of a direct LDI?
             new EqasmAddi(_reg, r0, value)
 
         } else {
@@ -77,26 +125,8 @@ class EqasmBackend {
     }
 
     static def loadImmToReg(GPR _reg, int value, String comment) {
-
 		var insn = loadImmToReg(_reg, value)
 		insn.setTrailingComment(comment)
-        
-//        checkRange(value)
-//
-//        val r0 = new GPR(0)
-//
-//        if (-0x1000 < value && value < 0x1000) {
-//            var insn = new EqasmAddi(_reg, r0, value)
-//            insn.setTrailingComment(comment)
-//
-//        } else {
-//            val low20bits = value.bitwiseAnd(0xFFFFF)
-//            val high15bits = value >>> 17
-//            var insnLdi = new EqasmLdi(_reg, low20bits)
-//            insnLdi.setTrailingComment(comment)
-//            var insnLdui = new EqasmLdui(_reg, _reg, high15bits)
-//            insnLdui.setTrailingComment(comment)
-//        }
     }
 
     /**
@@ -135,7 +165,6 @@ class EqasmBackend {
         new EqasmFmvxw(strToGPR(regTarget), strToFPR(fregSource))
     }
 
-
     static def genInsnConvFloatToInt(String regGPR, String regFPR) {
         new EqasmFcvtws(strToGPR(regGPR), strToFPR(regFPR))
     }
@@ -148,7 +177,7 @@ class EqasmBackend {
         new EqasmFmr(strToGPR(regTarget), strToQR(regQR))
     }
     // ----------------------------------------------------------------------------------
-    // immediate values related operations, commonly used aliases, ...
+    // immediate values related operations, commonly used aliases, ... end
     // ----------------------------------------------------------------------------------
 
     // ----------------------------------------------------------------------------------
@@ -187,6 +216,14 @@ class EqasmBackend {
         new EqasmOr(strToGPR(regOrResult), strToGPR(regLeftOperand), strToGPR(regRightOperand))
     }
 
+	/**
+	 * Generate arithmetic instructions for int type.
+	 * 
+	 * @param regTarget        the register to store the result
+	 * @param regLeftOperand   the register of the left operand
+	 * @param strOperator      the operator
+	 * @param regRightOperand  the register of the right operand
+	 */
     static def genInsnForArith(String regTarget, String regLeftOperand,
                                String strOperator, String regRightOperand) {
 
@@ -204,6 +241,14 @@ class EqasmBackend {
         }
     }
 
+	/**
+	 * Generate arithmetic instructions for double type.
+	 * 
+	 * @param fregTarget        the register to store the result
+	 * @param fregLeftOperand   the register of the left operand
+	 * @param strOperator       the operator
+	 * @param fregRightOperand  the register of the right operand
+	 */
     static def genInsnForFpArith(String fregTarget, String fregLeftOperand,
                                  String strOperator, String fregRightOperand) {
 
@@ -239,7 +284,14 @@ class EqasmBackend {
         new EqasmAddi(strToGPR(regTarget), strToGPR(regTarget), iOffset)
     }
 
-    // maybe this function can be further splitted.
+    /**
+     * Generate instructions for unary operators.
+     * 
+     * @param regTarget  register storing the target value
+     * @param regSource  register storing the source value
+     * @param strOp      the operator
+     * @param type       the Type of the value
+     */
     static def genInsnForUnary(String regTarget, String regSource, String strOp, Type type) {
         if (strOp == "-") {
             if (type instanceof DoubleType) {
@@ -247,14 +299,14 @@ class EqasmBackend {
                 val fs = strToFPR(regSource)
                 new EqasmFnegs(fd, fs)
 
-            } else {
+            } else { // type instanceof IntType
 
                 val rd = strToGPR(regTarget)
                 val rs = strToGPR(regSource)
                 new EqasmSub(rd, r0, rs)
             }
 
-        } else if (strOp == "!") {  // TODO: this logic seems to be erroneous
+        } else if (strOp == "!") {
             if (!(type instanceof BoolType)) {
                 throw new Exception("The ! operator can only be used for boolean values.")
             }
@@ -266,7 +318,7 @@ class EqasmBackend {
     }
 
     // ----------------------------------------------------------------------------------
-    // arithmetic operations for GPR and FPR
+    // arithmetic operations for GPR and FPR end
     // ----------------------------------------------------------------------------------
 
     // ----------------------------------------------------------------------------------
@@ -277,7 +329,7 @@ class EqasmBackend {
      */
     static def storeRegToMem(Type type, String sourceReg, int address) {
 
-        switch(type) {  // TODO: replace r0 with variable regConstantZero
+        switch(type) {
             BoolType:   new EqasmSb(strToGPR(sourceReg), address, r0)
             DoubleType: new EqasmFsw(strToFPR(sourceReg), address, r0)
             default:    new EqasmSw(strToGPR(sourceReg), address, r0)
@@ -317,6 +369,7 @@ class EqasmBackend {
             default:    new EqasmLw(strToGPR(targetReg), address, r0)
         }
     }
+    
     static def loadMemToReg(String targetReg, int address) {
 		new EqasmLw(strToGPR(targetReg), address, r0)
     }
@@ -338,7 +391,7 @@ class EqasmBackend {
 		new EqasmLw (strToGPR(targetReg), offset, strToGPR(baseAddrReg))
     }
     // ----------------------------------------------------------------------------------
-    // Memory operations
+    // Memory operations end
     // ----------------------------------------------------------------------------------
 
     // ----------------------------------------------------------------------------------
@@ -364,6 +417,13 @@ class EqasmBackend {
         new EqasmQBundle(PreInterval, opName, strToQotrs(regQotrs))
     }
 
+	/**
+	 * Generate a two-qubit gate operation.
+	 * 
+	 * @param PreInterval    the interval before this operation
+	 * @param opName         the name of the operation
+	 * @param qubit_pair     the two qubits used in this operation
+	 */
     static def genInsnTQOperation(int PreInterval, String opName, QubitPair qubit_pair) {
 
         var regQotrt = strToQotrt('t0')         // allocate a Qotrt
@@ -375,14 +435,22 @@ class EqasmBackend {
         new EqasmQBundle(PreInterval, opName, regQotrt)
     }
     // ----------------------------------------------------------------------------------
-    // Quantum operations
+    // Quantum operations end
     // ----------------------------------------------------------------------------------
 
     // ----------------------------------------------------------------------------------
     // Comparison, Jump, Labels, etc.
     // ----------------------------------------------------------------------------------
 
-    // maybe the following two functions can be merged into a single one.
+	/**
+	 * Generate eQASM instructions to check the equality of two operands.
+	 * 
+	 * @param regResult        the register to store the result
+	 * @param regLeftOperand   the register of the left operand
+	 * @param regRightOperand  the register of the right operand
+	 * @param strOp            the operator
+	 * @param type             the Type of the operands
+	 */
     static def genInsnsCheckEquality(String regResult, String regLeftOperand, String regRightOperand,
                               String strOp, Type type) {
         Assertions.assertTrue(strOp.equals('==') || strOp.equals('!='))
@@ -406,6 +474,12 @@ class EqasmBackend {
 
     /**
      * Generate eQASM instructions for partial order (PO) relationship comparison.
+	 * 
+	 * @param regResult        the register to store the result
+	 * @param regLeftOperand   the register of the left operand
+	 * @param regRightOperand  the register of the right operand
+	 * @param strOp            the operator
+	 * @param type             the Type of the operands
      */
     static def genInsnsPOCmp(String regResult, String regLeftOperand, String regRightOperand, String strOp, Type type) {
 
@@ -461,7 +535,6 @@ class EqasmBackend {
     }
 
     static def insertQasmGoto(String targetLabel) {
-        // addEqasmBeq('r0', 'r0', funcEndLabel)
         new EqasmBr('ALWAYS', targetLabel)
     }
 
@@ -490,10 +563,13 @@ class EqasmBackend {
         new EqasmComment("# " + comment)
     }
     // ----------------------------------------------------------------------------------
-    // Comparison, Jump, Labels, etc.
+    // Comparison, Jump, Labels, etc. end
     // ----------------------------------------------------------------------------------
 
 
+	/**
+	 * Generate the initialization instructions in the beginning of a program
+	 */
     static def addInitInstructions() {
         new EqasmXor(r0, r0, r0)
         new EqasmAddi(r1, r0, 1)

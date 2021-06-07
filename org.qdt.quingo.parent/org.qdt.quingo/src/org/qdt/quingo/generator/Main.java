@@ -9,7 +9,6 @@ import com.google.inject.Provider;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import org.eclipse.emf.common.util.URI;
 import org.eclipse.emf.ecore.resource.Resource;
@@ -26,9 +25,16 @@ import org.qdt.quingo.quingo.AbstractElement;
 import org.qdt.quingo.quingo.FunDeclaration;
 import org.qdt.quingo.quingo.Program;
 
+/**
+ * The wrapper of the command-line compiler.
+ * 
+ * @author Jintao Yu
+ */
 public class Main {
-	public static Boolean debugMode = false;
 
+	/**
+	 * Print the usage of the command-line compiler
+	 */
 	static void printUsage() {
 		System.out.println("Usage: java -jar quingo.jar <Quingo_files> <configuration_file> [options]");
 		System.out.println("Options: ");
@@ -41,48 +47,24 @@ public class Main {
 		System.out.println("\t-v --version             Print version information.");
 	}
 
+	/**
+	 * The entry point of the command-line compiler
+	 */
 	public static void main(String[] args) {
+		
+		// must specify files for compilation
 		if (args.length == 0) {
 			printUsage();
 			System.exit(-1);
 			return;
 		}
 		
-//		debugMode = false;
-
-		List<String> custom_args = Arrays.asList("D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\kernel.qu",
-			"D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\config.qfg",
-			"D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\standard_operations.qu",
-			"-o", "D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\build\\debug.eqasm",
-			"-s", "0",
-			"-t", "65536",
-			"-d", "131072",
-			"-u", "100");
-
-		List<String> mainFileList = Arrays.asList("2d_array.qu");
-//		List<String> mainFileList = Arrays.asList("add.qu", "bell.qu", "qft_kernel.qu", "qrng_kernel.qu", "rb_kernel.qu", "switch_toInt.qu");
-
-		String dirDebugUse = "D:\\GitHub\\git_pcl\\compiler_xtext\\quingo.source\\src\\debug_use\\";
-
-//		ArrayList<String> trueArgs = new ArrayList<String>();
-
-
+		// process the injection
 		Injector injector = new QuingoStandaloneSetup().createInjectorAndDoEMFRegistration();
 		Main main = injector.getInstance(Main.class);
-		int ret = 0;
-		if (debugMode) {
-			for (String kernel_fn : mainFileList) {
-				String filename = dirDebugUse + kernel_fn;
-				custom_args.set(0, filename);
-				System.out.println("Testing the file: " + filename);
-				ret = main.runGenerator(custom_args.toArray(new String[0]));
-			}
-
-		} else {
-
-			ret = main.runGenerator(args);
-		}
-
+		
+		// call the actual implementation
+		int ret = main.runGenerator(args);
 		if (ret != 0) {
 			System.exit(ret);
 		}
@@ -100,10 +82,28 @@ public class Main {
 	@Inject
 	private JavaIoFileSystemAccess fileAccess;
 
+	/**
+	 * Process the command line and call the code generator
+	 * <p>
+	 * Summary of the exit status codes --
+	 * 	  0: normal exit
+	 *	 -1: syntax errors exist in source files
+	 *	 -2: compilation failed (compiler finds errors in Quingo source files)
+	 *	 -3: not find 'main' operation
+	 *	 -4: compiler collapses (due to a bug in the source code)
+	 *	 -5: command-line error
+	 * 
+	 * @param string  the command arguments
+	 * @return        exit code
+	 */
 	protected int runGenerator(String[] string) {
+		// The collection of all the source files
 		ResourceSet set = resourceSetProvider.get();
+		
+		// List of all the resources
 		List<Resource> all_resources = new ArrayList<Resource>();
-		String mainf = "";
+		
+		// The source file containing the main operation
 		Resource mainRes = null;
 
 		for (int i = 0; i < string.length; i++) {
@@ -113,11 +113,13 @@ public class Main {
 			case "--help":
 				printUsage();
 				return 0;
+				
 			case "-v":
 			case "-V":
 			case "--version":
 				System.out.println("Quingo compiler v0.2.0.2");
 				return 0;
+				
 			case "-o":
 			case "-O":
 			case "--ouput":
@@ -127,6 +129,7 @@ public class Main {
 				}
 				Configuration.outputFile = string[i];
 				break;
+				
 			case "-s":
 			case "-S":
 			case "--shared-addr":
@@ -142,6 +145,7 @@ public class Main {
 					return -5;
 				}
 				break;
+				
 			case "-t":
 			case "-T":
 			case "--static-addr":
@@ -157,6 +161,7 @@ public class Main {
 					return -5;
 				}
 				break;
+				
 			case "-d":
 			case "-D":
 			case "--dynamic-addr":
@@ -172,6 +177,7 @@ public class Main {
 					return -5;
 				}
 				break;
+				
 			case "-u":
 			case "-U":
 			case "--max-unroll":
@@ -187,40 +193,31 @@ public class Main {
 					return -5;
 				}
 				break;
+				
 			default:
 				if (string[i].charAt(0) == '-') {
 					System.err.println("ERROR: unrecognized option!");
 					return -5;
 				}
+				
 				if (!string[i].endsWith(".qu") && !string[i].endsWith(".qfg")) {
 					System.err.println("ERROR: unrecognized file format!");
 					return -5;
 				}
+				
+				// separate the file containing the 'main' operation from other files
 				if (mainRes == null) {
-					mainf = string[i];
-					mainRes = set.getResource(URI.createFileURI(mainf), true);
-
+					mainRes = set.getResource(URI.createFileURI(string[i]), true);
 			        all_resources.add(mainRes);
-				} else if (string[i].compareTo(mainf) != 0) {
+				} 
+				else {
 			        Resource resource = set.getResource(URI.createFileURI(string[i]), true);
 			        all_resources.add(resource);
 		    	}
 			}
 		}
 
-		/*for (int i=0; i<all_resources.size(); ++i) {
-			Program prog = (Program)all_resources.get(i).getContents().get(0);
-			if (prog != null) {
-				for (AbstractElement ele : prog.getElements()) {
-					if (ele instanceof Include) {
-						String fileName = ((Include)ele).getFile();
-				        Resource resource = set.getResource(URI.createFileURI(fileName), true);
-				        all_resources.add(resource);
-					}
-				}
-			}
-	    }*/
-	    // Validate the resource
+	    // Validate the syntax of the source files
 	    for (Resource r: all_resources) {
 	        List<Issue> list = validator.validate(r, CheckMode.ALL, CancelIndicator.NullImpl);
 	        if (!list.isEmpty()) {
@@ -231,10 +228,11 @@ public class Main {
 	        }
 	    }
 
+	    // check whether the 'main' operation exist
 		Program prog = (Program)mainRes.getContents().get(0);
 		if (prog == null) {
 			System.err.println("ERROR: Not found main operation!");
-			return -1;
+			return -3;
 		}
 		Boolean found = false;
 		for (AbstractElement ele : prog.getElements()) {

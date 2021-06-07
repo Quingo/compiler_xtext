@@ -1,0 +1,15 @@
+eqasm
+org.qdt.quingo
+org.qdt.quingo.generator
+org.qdt.quingo.parser.antlr
+org.qdt.quingo.parser.antlr.internal
+org.qdt.quingo.quingo
+org.qdt.quingo.quingo.impl
+org.qdt.quingo.quingo.util
+org.qdt.quingo.resource
+org.qdt.quingo.scoping
+org.qdt.quingo.serializer
+org.qdt.quingo.services
+org.qdt.quingo.typing
+org.qdt.quingo.typing.validation
+org.qdt.quingo.validation

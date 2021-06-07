@@ -25,22 +25,18 @@ import org.qdt.quingo.quingo.Assignment
 
 /**
  * This class contains custom validation rules. 
- *
+ * <p>
  * See https://www.eclipse.org/Xtext/documentation/303_runtime_concepts.html#validation
+ * 
+ * @author Jintao Yu
  */
 class QuingoValidator extends QuingoSemanticsValidator {
-	
-//	public static val INVALID_NAME = 'invalidName'
-//
-//	@Check
-//	def checkGreetingStartsWithCapital(Greeting greeting) {
-//		if (!Character.isUpperCase(greeting.name.charAt(0))) {
-//			warning('Name should start with a capital', 
-//					QuingoPackage.Literals.GREETING__NAME,
-//					INVALID_NAME)
-//		}
-//	}
 
+	/**
+	 * Check whether a variable has been defined before.
+	 * 
+	 * @param stat  a LocalVarDecl statement
+	 */
 	@Check
 	def checkDuplicateVariable(LocalVarDecl stat) {
 		var container = stat.eContainer
@@ -60,6 +56,11 @@ class QuingoValidator extends QuingoSemanticsValidator {
 		}
 	}
 
+	/**
+	 * Check whether a break statement is inside a WhileStatement, ForStatement, or SwitchStatement
+	 * 
+	 * @param stat  the BreakStatement to be checked
+	 */
 	@Check
 	def checkBreak(BreakStatement stat) {
 		var container = stat.eContainer
@@ -73,6 +74,11 @@ class QuingoValidator extends QuingoSemanticsValidator {
 		}
 	}
 	
+	/**
+	 * Check whether a continue statement is inside a WhileStatement, ForStatement
+	 * 
+	 * @param stat  the ContinueStatement to be checked
+	 */
 	@Check
 	def checkContinue(ContinueStatement stat) {
 		var container = stat.eContainer
@@ -85,6 +91,14 @@ class QuingoValidator extends QuingoSemanticsValidator {
 		}
 	}
 	
+	/**
+	 * Check whether the left side of an Assignment is legal.
+	 * <p>
+	 * Legal left side expressions include variables, array accesses, and tuples consisting with
+	 * the previous two types.
+	 * 
+	 * @param stat  the assignment statement to be checked
+	 */
 	@Check
 	def checkAssignment(Assignment stat) {
 		var left = stat.left
@@ -93,6 +107,15 @@ class QuingoValidator extends QuingoSemanticsValidator {
 		}
 	}
 	
+	/**
+	 * Check whether the left side of an Assignment is legal.
+	 * <p>
+	 * Legal left side expressions include variables, array accesses, and tuples consisting with
+	 * the previous two types.
+	 * 
+	 * @param exp  the Expression on the left side of an Assignment
+	 * @return     whether it is legal
+	 */
 	def Boolean checkLeftSide(Expression exp) {
 		if (exp instanceof ExpTuple) {
 			for (texp: (exp as ExpTuple).texp) {

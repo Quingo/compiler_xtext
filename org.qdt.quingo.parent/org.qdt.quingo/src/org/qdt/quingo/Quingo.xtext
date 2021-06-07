@@ -30,6 +30,11 @@ FunDeclaration:
 
 FormalParameter:
 	name=ID ":" type=Type ("=" exp=Expression)?;
+	
+
+/**
+ * Types
+ */
 
 Type:
 	FunctionType;
@@ -45,6 +50,11 @@ PrimitiveType returns Type:
 
 TupleType returns Type:
 	{TupleType} "(" type+=Type ("," type+=Type)+ ")";
+	
+
+/**
+ * Statements
+ */
 
 Statement:
 	 IfStatement | ReturnStatement | WaitStatement | ForInitStatment | ForStatement
@@ -128,6 +138,23 @@ TimerDeclaration:
 TimingConstraint:
 	'@' timer=[TimerDeclaration] '=' value=Expression ':';
 
+	
+/**
+ * Expressions
+ * 
+ * Operator precedence from low to high:
+ * 1. ||
+ * 2. &&
+ * 3. ==, !=
+ * 4. <, >, <=, >=
+ * 5. +, -
+ * 6. *, /, %
+ * 7. + (unary operator), - (unary operator)
+ * 8. [] (array access), ()
+ * 
+ * Unary operators are associated from right to left, the others left to right.
+ */
+
 Expression :
 	Or;
 
@@ -182,6 +209,11 @@ ToInt returns Expression:
 ToDouble returns Expression:
 	{ToDouble} "toDouble" "(" value=Expression ")";
 
+
+/**
+ * Terminals, i.e, lexing rules
+ */
+ 
 terminal ASSIGNMENT_OP:
 	"+=" | "-=" | "*=" | "/=" | "%=" ;
 
@@ -199,6 +231,11 @@ terminal ADD_OP:
 
 UNARY_OP:
 	ADD_OP | "!";
+	
+
+/**
+ * Definitions for the configuration file
+ */
 
 QConfig :
 	"{"

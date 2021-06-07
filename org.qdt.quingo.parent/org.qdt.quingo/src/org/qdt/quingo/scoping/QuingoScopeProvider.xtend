@@ -18,12 +18,30 @@ import java.util.ArrayList
 import org.qdt.quingo.quingo.VariableName
 
 /**
- * This class contains custom scoping description.
+ * Custom scoping for Quingo variables declared in a For statement.
+ * <p>
+ * Scope is the range in which a symbol can be linked to. See 
+ * https://www.eclipse.org/Xtext/documentation/303_runtime_concepts.html#scoping for
+ * details.
+ * <p>
+ * Example: {@code for (int i=0; i<5; i++) }. The variable {@code i} can be used in the
+ * loop body. However, the default scoping rules of XText do not support it. Therefore,
+ * we extend the {@code AbstractQuingoScopeProvider} class to implement the desired scope
+ * rule.
  * 
- * See https://www.eclipse.org/Xtext/documentation/303_runtime_concepts.html#scoping
- * on how and when to use it.
+ * @author Jintao Yu
  */
 class QuingoScopeProvider extends AbstractQuingoScopeProvider {
+	/**
+	 * Returns a scope for the given context.
+	 * <p>
+	 * The scope provides access to the compatible visible EObjects for a given reference.
+	 *
+	 * @param context    the element from which an element shall be referenced. 
+	 * @param reference  the reference for which to get the scope.
+	 * @return {@link IScope} representing the innermost {@link IScope} for the passed 
+	 *         context and reference.
+	 */
 	override getScope(EObject context, EReference reference) {
 		if (reference == QuingoPackage.eINSTANCE.expVariable_Value) {
 			return scopeForVariable(context, reference)
@@ -31,6 +49,17 @@ class QuingoScopeProvider extends AbstractQuingoScopeProvider {
 		return super.getScope(context, reference)
 	}
 	
+	/**
+	 * The scope provider for variables.
+	 * <p>
+	 * Specially, the function include the variable declared in the 'init' part of a For loop
+	 * in the scope of variables in the loop body.
+	 *
+	 * @param context    the element from which an element shall be referenced. 
+	 * @param reference  the reference for which to get the scope.
+	 * @return {@link IScope} representing the innermost {@link IScope} for the passed 
+	 *         context and reference.
+	 */
 	def IScope scopeForVariable(EObject context, EReference reference) {
 		val container = context.eContainer
 		if (container instanceof BlockStatement) {

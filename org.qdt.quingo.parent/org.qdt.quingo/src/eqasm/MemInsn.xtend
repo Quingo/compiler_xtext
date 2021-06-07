@@ -2,9 +2,9 @@ package eqasm
 
 import eqasm.EqasmBase
 
-// -------------------------------------------------------------------------------
-// Store to Memory
-// -------------------------------------------------------------------------------
+/**
+ * The base class of store instructions.
+ */
 class StoreBase extends EqasmBase {
 	GPR rs
 	ImmValue imm
@@ -21,7 +21,11 @@ class StoreBase extends EqasmBase {
 	}
 }
 
-// SB  rs, imm10(rt)
+/**
+ * eQASM SB instruction.
+ * <p>
+ * Example: SB  rs, imm10(rt)
+ */
 class EqasmSb extends StoreBase {
 	new (GPR _rs, int _imm, GPR _rt) {
 		super(_rs, _imm, _rt)
@@ -29,7 +33,11 @@ class EqasmSb extends StoreBase {
 	}
 }
 
-// SW  rs, imm10(rt)
+/**
+ * eQASM SW instruction.
+ * <p>
+ * Example: SW  rs, imm10(rt)
+ */
 class EqasmSw extends StoreBase {
 	new (GPR _rs, int _imm, GPR _rt) {
 		super(_rs, _imm, _rt)
@@ -38,9 +46,9 @@ class EqasmSw extends StoreBase {
 }
 
 
-// -------------------------------------------------------------------------------
-// Load from Memory
-// -------------------------------------------------------------------------------
+/**
+ * Base class of load instructions.
+ */
 class LoadBase extends EqasmBase{
 	GPR rd
 	ImmValue imm
@@ -57,7 +65,11 @@ class LoadBase extends EqasmBase{
 	}
 }
 
-// LW  rd, imm10(rt)
+/**
+ * eQASM LW instruction.
+ * <p>
+ * Example: LW  rd, imm10(rt)
+ */
 class EqasmLw extends LoadBase {
 	new (GPR _rd, int _imm, GPR _rt) {
 		super(_rd, _imm, _rt)
@@ -65,8 +77,11 @@ class EqasmLw extends LoadBase {
 	}
 }
 
-
-// LB  rd, imm10(rt)
+/**
+ * eQASM LB instruction.
+ * <p>
+ * Example: LB  rd, imm10(rt)
+ */
 class EqasmLb extends LoadBase {
 	new (GPR _rd, int _imm, GPR _rt) {
 		super(_rd, _imm, _rt)
@@ -74,7 +89,11 @@ class EqasmLb extends LoadBase {
 	}
 }
 
-// LBU rd, imm10(rt)
+/**
+ * eQASM LBU instruction.
+ * <p>
+ * Example: LBU rd, imm10(rt)
+ */
 class EqasmLbu extends LoadBase {
 	new (GPR _rd, int _imm, GPR _rt) {
 		super(_rd, _imm, _rt)

@@ -12,7 +12,6 @@ class QuingoResourceSet extends SynchronizedXtextResourceSet {
 	override Resource getResource(URI uri, boolean loadOnDemand) {
 		synchronized (lock) {
 			var resource = super.getResource(uri, loadOnDemand);
-			//System.err.println("resource=" + resource?.URI + ", platformString=" + uri?.toPlatformString(true))
 			var prog = resource?.contents?.head
 			if (prog instanceof Program) {
 				for (AbstractElement ele : prog?.getElements) {
@@ -26,7 +25,6 @@ class QuingoResourceSet extends SynchronizedXtextResourceSet {
 					}
 				}
 			}
-			//System.err.println("resourceSet=" + resource.resourceSet?.resources)
 			return resource
 		}
 	}
